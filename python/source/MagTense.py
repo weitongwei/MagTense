@@ -244,6 +244,68 @@ class Tiles():
                 self.set_color_i([0,0.5,0.2],i) # Dark Green
                 self.set_mag_type_i(2,i)
                 self.set_M([1000,0,0],i)
+        
+        def add_tiles(self, n):
+                self.center_pos = np.append(self.center_pos, np.zeros(shape=(n,3), dtype=np.float64, order='F'), axis = 0) # r0, theta0, z0
+                self.dev_center = np.append(self.dev_center, np.zeros(shape=(n,3), dtype=np.float64, order='F'), axis = 0) # dr, dtheta, dz
+                self.size = np.append(self.size, np.zeros(shape=(n,3), dtype=np.float64, order='F'), axis = 0) # a, b, c
+                self.vertices = np.append(self.vertices, np.zeros(shape=(n,3,4), dtype=np.float64, order='F'), axis = 0) # v1, v2, v3, v4 as column vectors
+                self.M = np.append(self.M, np.zeros(shape=(n,3), dtype=np.float64, order='F'), axis = 0) # Mx, My, Mz
+                self.u_ea = np.append(self.u_ea, np.zeros(shape=(n,3), dtype=np.float64, order='F'), axis = 0) # Easy axis
+                self.u_oa1 = np.append(self.u_oa1, np.zeros(shape=(n,3), dtype=np.float64, order='F'), axis = 0)
+                self.u_oa2 = np.append(self.u_oa2, np.zeros(shape=(n,3), dtype=np.float64, order='F'), axis = 0)
+                self.mu_r_ea = np.append(self.mu_r_ea, np.ones(shape=(n), dtype=np.float64, order='F'), axis = 0)
+                self.mu_r_oa = np.append(self.mu_r_oa, np.ones(shape=(n), dtype=np.float64, order='F'), axis = 0)
+                self.M_rem = np.append(self.M_rem, np.zeros(shape=(n), dtype=np.float64, order='F'), axis = 0)
+                self.tile_type = np.append(self.tile_type, np.ones(n, dtype=np.int32, order='F'), axis = 0) # 1 = cylinder, 2 = prism, 3 = circ_piece, 4 = circ_piece_inv, 5 = tetrahedron, 10 = ellipsoid
+                self.offset = np.append(self.offset, np.zeros(shape=(n,3), dtype=np.float64, order='F'), axis = 0) # offset of global coordinates
+                self.rot = np.append(self.rot, np.zeros(shape=(n,3), dtype=np.float64, order='F'), axis = 0)
+                self.color = np.append(self.color, np.zeros(shape=(n,3), dtype=np.float64, order='F'), axis = 0)
+                self.magnetic_type = np.append(self.magnetic_type, np.ones(n, dtype=np.int32, order='F'), axis = 0) # 1 = hard magnet, 2 = soft magnet
+                self.stfcn_index = np.append(self.stfcn_index, np.ones(shape=(n), dtype=np.int32, order='F'), axis = 0) # default index into the state function
+                self.incl_it = np.append(self.incl_it, np.ones(shape=(n), dtype=np.int32, order='F'), axis = 0) # if equal to zero the tile is not included in the iteration
+                self.use_sym = np.append(self.use_sym, np.zeros(shape=(n), dtype=np.int32, order='F'), axis = 0) # whether to exploit symmetry
+                self.sym_op = np.append(self.sym_op, np.ones(shape=(n,3), dtype=np.float64, order='F'), axis = 0) # 1 for symmetry and -1 for anti-symmetry respectively to the planes
+                self.M_rel = np.append(self.M_rel, np.zeros(shape=(n), dtype=np.float64, order='F'), axis = 0)                             
+                self.grid_pos = np.append(self.grid_pos, np.zeros(shape=(n,3), dtype=np.float64, order='F'), axis = 0) # positions in the grid
+                self.n = self.n + n
+
+        def refinement_prism(self, idx):
+                if isinstance(idx, int) or isinstance(idx, float):
+                        self.refinement_prism_i(idx)
+                else:
+                        for i in idx:
+                                self.refinement_prism_i(i)
+        
+        def refinement_prism_i(self, i):
+                n = self.n
+                self.add_tiles(7)
+                center_point = self.offset[i]
+                x_off, y_off, z_off = self.size[i]/4
+
+                self.size[n:n+7] = self.size[i]/2
+                self.size[i] = self.size[i]/2
+                self.M[n:n+7] = self.M[i]
+                self.M_rel[n:n+7] = self.M_rel[i]
+                self.color[n:n+7] = self.color[i]
+                self.magnetic_type[n:n+7] = self.magnetic_type[i]
+                self.mu_r_ea[n:n+7] = self.mu_r_ea[i]
+                self.mu_r_oa[n:n+7] = self.mu_r_oa[i]
+                self.rot[n:n+7] = self.rot[i]
+                self.tile_type[n:n+7] = self.tile_type[i]
+                self.u_ea[n:n+7] = self.u_ea[i]
+                self.u_oa1[n:n+7] = self.u_oa1[i]
+                self.u_oa2[n:n+7] = self.u_oa2[i]
+
+                self.offset[n] = center_point + [x_off, y_off, z_off]
+                self.offset[n+1] = center_point + [-x_off, y_off, z_off]
+                self.offset[n+2] = center_point + [x_off, -y_off, z_off]
+                self.offset[n+3] = center_point + [-x_off, -y_off, z_off]
+                self.offset[n+4] = center_point + [x_off, y_off, -z_off]
+                self.offset[n+5] = center_point + [-x_off, y_off, -z_off]
+                self.offset[n+6] = center_point + [x_off, -y_off, -z_off]
+                self.offset[i] = center_point + [-x_off, -y_off, -z_off]
+                
                 
 
 class Grid():

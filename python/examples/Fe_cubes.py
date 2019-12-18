@@ -24,6 +24,8 @@ def main():
     tiles.set_mu_r_oa(1.17)
 
     tiles.set_as_Fe([1,2])
+    tiles.refinement_prism([1,2])
+    tiles.refinement_prism(10)
 
     # Standard parameters in settings: max_error=0.00001, max_it=500
     # All steps in one command - iterate_solution = True, return_field = True
