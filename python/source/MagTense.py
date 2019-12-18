@@ -228,6 +228,22 @@ class Tiles():
 
         def set_mag_type_i(self, mag_type, i):
                 self.magnetic_type[i] = mag_type
+  
+        def set_as_Fe(self, idx):
+                if isinstance(idx, int) or isinstance(idx, float):
+                        self.set_as_Fe_i(idx)
+                else:
+                        for i in idx:
+                                self.set_as_Fe_i(i)
+
+        def set_as_Fe_i(self, i):
+                self.set_remanence_i(0,i) # No remanence for iron
+                self.set_mag_angle_i([math.pi/2, 0], i) # Default: Easy axis in direction of x-axis
+                self.set_mu_r_ea_i(4000,i) # High relative permeability for iron
+                self.set_mu_r_oa_i(4000,i) # High relative permeability for iron
+                self.set_color_i([0,0.5,0.2],i) # Dark Green
+                self.set_mag_type_i(2,i)
+                self.set_M([1000,0,0],i)
                 
 
 class Grid():
