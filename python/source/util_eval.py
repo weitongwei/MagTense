@@ -21,6 +21,8 @@ def load_COMSOL_eval(file_name, eval_offset, COMSOL_eval_path, pts_special=None)
         pts = np.c_[struc*eval_offset[0], pts_coor, struc*eval_offset[2]]
     elif file_name[-5] == 'z':
         pts = np.c_[struc*eval_offset[0], struc*eval_offset[1], pts_coor]
+    else:
+        pts = np.c_[struc*eval_offset[0], struc*eval_offset[1], pts_coor]
 
     return (pts, H_norm_COMSOL)
 

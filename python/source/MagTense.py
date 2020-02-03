@@ -401,7 +401,7 @@ def get_norm_magnetic_flux(H):
         return norm
 
 
-def setup(places, area, n_tiles=0, filled_positions=None, mag_angles=[], eval_points=[20, 20, 1], eval_mode="uniform", B_rem=1.2):
+def setup(places, area, n_tiles=0, filled_positions=None, mag_angles=[], eval_points=[20, 20, 5], eval_mode="uniform", B_rem=1.2):
         # Check format of input parameters
         if len(places) != 3:
                 print("Format of number of possible magnets in each axis is not correct!")
@@ -444,7 +444,7 @@ def run_simulation(tiles, points, grid=None, plot=False, max_error=0.00001, max_
         iterate_solution = iterate_solution
         return_field = return_field
         T = T # temperature for the state function of iron (arbitrary here as we ignore temperature variation in the iron)
-        data_stateFcn = np.genfromtxt(os.path.dirname(os.path.abspath(__file__)) + '/../util/data_stateFcn.csv', delimiter=';', dtype=np.float64)
+        data_stateFcn = np.genfromtxt(os.path.dirname(os.path.abspath(__file__)) + '/../util/data_stateFcn_saturated.csv', delimiter=';', dtype=np.float64)
 
         H, M_out, Mrel_out = \
                 MagTenseSource.fortrantopythonio.runsimulation( centerpos=tiles.center_pos, dev_center=tiles.dev_center, \
