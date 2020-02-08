@@ -348,7 +348,7 @@ class Grid():
                                 if True in np.greater_equal(np.asarray(pos), self.places):
                                         print(("Desired position {} is not in the grid!").format(pos))
                                         exit()
-                                self.grid[pos] = 1
+                                self.grid[pos[0],pos[1],pos[2]] = 1
 
                                 # Extract Cartesian coordinates of tile
                                 tiles.set_offset_i(np.around((pos * self.size_tile) + self.size_tile/2, decimals=9),i)
@@ -399,6 +399,9 @@ def get_norm_magnetic_flux(H):
         mu0 = 4*math.pi*1e-7 # vacuum permeability
         norm = [np.linalg.norm(H_point)*mu0 for H_point in H]
         return norm
+
+def get_norm_magnetic_field(H):
+        return [np.linalg.norm(H_point) for H_point in H]
 
 
 def setup(places, area, n_tiles=0, filled_positions=None, mag_angles=[], eval_points=[20, 20, 5], eval_mode="uniform", B_rem=1.2):
