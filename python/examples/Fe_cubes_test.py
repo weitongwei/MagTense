@@ -14,10 +14,10 @@ def plot_H_diff_heights(steps, label):
     fig = plt.figure()
     ax = fig.gca()
 
-    for i in range(4, 5):
+    for i in range(10, 11):
         height = i/100
         # Defining grid
-        #eval_offset = [0.45, 0.55, height/2]
+        # eval_offset = [0.45, 0.55, height/2]
         eval_offset = [0.65, 0.55, height/2]
         places = [10, 10, 1]
         area = [1, 1, height]
@@ -29,6 +29,7 @@ def plot_H_diff_heights(steps, label):
         # Optional parameters for setup: n_magnets, filled_positions, mag_angles, eval_points, eval_mode, B_rem
         (tiles, points, grid) = MagTense.setup(places, area, filled_positions=filled_positions, mag_angles=mag_angles, eval_points=[30, 30, 1])
         tiles.set_as_Fe([1])
+        tiles.refinement_prism(1)
 
         struc = np.ones(len(steps))
 
@@ -42,6 +43,7 @@ def plot_H_diff_heights(steps, label):
         # Standard parameters in settings: max_error=0.00001, max_it=500
         # All steps in one command - iterate_solution = True, return_field = True
         # N is not reused for calculating the H field
+        # updated_tiles = MagTense.iterate_magnetization(tiles)
         (updated_tiles, H_field) = MagTense.run_simulation(tiles, pts, grid=grid, plot=False)
 
         # Plotting B-field for each axis through center
@@ -51,7 +53,7 @@ def plot_H_diff_heights(steps, label):
         ax.set_title('H_norm [A/m]')
         ax.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.1e'))
 
-        # (updated_tiles, H_field) = MagTense.run_simulation(tiles, pts, grid=grid, plot=True)
+        (updated_tiles, H_field) = MagTense.run_simulation(tiles, points, grid=grid, plot=True)
 
     plt.grid()
     plt.show()
@@ -62,8 +64,8 @@ def main():
     steps_z = np.linspace(-0.5,0.5,1000)
 
     plot_H_diff_heights(steps, 'x')
-    plot_H_diff_heights(steps, 'y')
-    plot_H_diff_heights(steps_z, 'z')
+    #plot_H_diff_heights(steps, 'y')
+    #plot_H_diff_heights(steps_z, 'z')
 
 main()
 

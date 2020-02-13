@@ -19,6 +19,8 @@ function stateFcn = MakeMH_Fe_const_mur( mur, Ms )
     
     out = zeros( nH, 2 );
     out(:,1) = H;
+    
+    out_mur = M./H + 1;
     out(:,2) = M;
     
     dlmwrite( ['Fe_mur_' num2str(mur) '_Ms_' num2str(Ms) '.txt'], out, 'delimiter','\t','precision','%15.7f');

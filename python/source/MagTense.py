@@ -238,7 +238,7 @@ class Tiles():
 
         def set_as_Fe_i(self, i):
                 self.set_remanence_i(0,i) # No remanence for iron
-                self.set_mag_angle_i([math.pi/2, 0], i) # Default: Easy axis in direction of x-axis
+                self.set_mag_angle_i([0, 0], i) # Default: Easy axis in direction of x-axis
                 self.set_mu_r_ea_i(4000,i) # High relative permeability for iron
                 self.set_mu_r_oa_i(4000,i) # High relative permeability for iron
                 self.set_color_i([0,0.5,0.2],i) # Dark Green
@@ -447,7 +447,7 @@ def run_simulation(tiles, points, grid=None, plot=False, max_error=0.00001, max_
         iterate_solution = iterate_solution
         return_field = return_field
         T = T # temperature for the state function of iron (arbitrary here as we ignore temperature variation in the iron)
-        data_stateFcn = np.genfromtxt(os.path.dirname(os.path.abspath(__file__)) + '/../util/data_stateFcn_saturated.csv', delimiter=';', dtype=np.float64)
+        data_stateFcn = np.genfromtxt(os.path.dirname(os.path.abspath(__file__)) + '/../util/data_stateFcn_Fe_mur_20_Ms_2_1.csv', delimiter=';', dtype=np.float64)
 
         H, M_out, Mrel_out = \
                 MagTenseSource.fortrantopythonio.runsimulation( centerpos=tiles.center_pos, dev_center=tiles.dev_center, \
@@ -483,7 +483,7 @@ def iterate_magnetization(tiles, max_error=0.00001, max_it=500, T=300.):
         max_error = max_error # max relative error
         max_it = max_it # max number of iterations
         T = T # temperature for the state function of iron (arbitrary here as we ignore temperature variation in the iron)
-        data_stateFcn = np.genfromtxt(os.path.dirname(os.path.abspath(__file__)) + '/../util/data_stateFcn.csv', delimiter=';', dtype=np.float64)
+        data_stateFcn = np.genfromtxt(os.path.dirname(os.path.abspath(__file__)) + '/../util/data_stateFcn_Fe_mur_4000_Ms_2_1.csv', delimiter=';', dtype=np.float64)
 
         M_out, Mrel_out = MagTenseSource.fortrantopythonio.iteratetiles( centerpos=tiles.center_pos, dev_center=tiles.dev_center, \
                 rect_size=tiles.size, vertices=tiles.vertices, mag=tiles.M, u_ea=tiles.u_ea, u_oa1=tiles.u_oa1, u_oa2=tiles.u_oa2, mu_r_ea=tiles.mu_r_ea, \
