@@ -27,7 +27,7 @@ d = 0.1;
 tile.abc = [d,d,d];
 
 %set the center position of the prism (centered at Origin)
-tile.offset = [0.45,0.55,d/2];
+tile.offset = [0.3,0.5,0];
 
 %set the easy axis of the cube. This is expected to be with respect to the global
 %coordinate system basis
@@ -48,12 +48,13 @@ tile.Mrem = 1.2 / mu0;
 iron = tile;
 iron.color = [0,0,1];
 iron.magnetType = getMagnetType('soft');
-iron.offset = [0.65,0.55,d/2];
+iron.offset = [0.5,0.5,0];
 %set the relative permeability for the easy axis (iron)
 iron.mu_r_ea = mur;
 %and for the two hard axes
 iron.mu_r_oa = mur;
 iron.Mrem = 0; 
+res = struct('nx',2,'ny',2,'nz',1);
 tiles = [tile, refineTiles( iron, res )];
 
 % %build a 2D grid of 5x5 identical cubes
@@ -114,7 +115,7 @@ tiles = [tile, refineTiles( iron, res )];
 %load the const mur state function
 stFcn=MakeMH_Fe_const_mur( mur, Ms );
 
-tiles = IterateMagnetization( tiles, stFcn, 300, 1e-3, 100 );
+tiles = IterateMagnetization( tiles, stFcn, 300, 1e-7, 100 );
 %tiles = IterateMagnetization( tiles, [], [], 1e-3, 100 );
 
 close all;%plotTiles(tiles,true);axis equal;alpha 0.3
@@ -122,7 +123,7 @@ close all;%plotTiles(tiles,true);axis equal;alpha 0.3
 %define a range of points spanning the xy plane at z=0
 x = linspace( 0,1, 101);
 y = linspace( 0,1, 101);
-z = d/2;
+z = 0;
 
 %use meshgrid to fill out the span
 [X,Y,Z] = meshgrid(x,y,z);
@@ -153,7 +154,7 @@ x = 0:0.001:1;
 y = 0:0.001:1;
 z = -0.5:0.001:0.5;
 
-offset = [0.45,0.55,d/2];
+offset = [0.5,0.5,0];
 
 pts = zeros( numel(x)+numel(y)+numel(z), 3 );
 pts(1:numel(x),:) = [x; zeros(1,numel(x))+offset(2); zeros(1,numel(x))+offset(3)]';
@@ -165,16 +166,37 @@ tic
 H = getHFromTiles_mex( tiles, pts, int32(length(tiles)), int32(length(pts(:,1))) );
 toc
 
+Hxx = H(1:numel(x),1);
+Hyx = H(1:numel(x),2);
+Hzx = H(1:numel(x),3);
+
+Hxy = H(numel(x)+1:numel(x)+numel(y),1);
+Hyy = H(numel(x)+1:numel(x)+numel(y),2);
+Hzy = H(numel(x)+1:numel(x)+numel(y),3);
+
+Hxz = H(numel(x)+numel(y)+1:end,1);
+Hyz = H(numel(x)+numel(y)+1:end,2);
+Hzz = H(numel(x)+numel(y)+1:end,3);
+
 %Find the norm of the field
 Hnorm = squeeze( sqrt( sum(H.^2,2) ) );
 
 %Plot the solution
 getFigure();
-plot(x,Hnorm(1:numel(x)),'r');
+plot(x,Hxx,'displayname','Hx','linewidth',2);
+plot(x,Hyx,'displayname','Hy','linewidth',2);
+plot(x,Hzx,'displayname','Hz','linewidth',2);
+ylabel('Field along x');
 getFigure();
-plot(y,Hnorm((numel(x)+1):(numel(x)+numel(y))),'g');
+plot(y,Hxy,'displayname','Hx','linewidth',2);
+plot(y,Hyy,'displayname','Hy','linewidth',2);
+plot(y,Hzy,'displayname','Hz','linewidth',2);
+ylabel('Field along y');
 getFigure();
-plot(z,Hnorm((numel(x)+1+numel(y)):(numel(x)+numel(y)+numel(z))),'b');
+plot(z,Hxz,'displayname','Hx','linewidth',2);
+plot(z,Hyz,'displayname','Hy','linewidth',2);
+plot(z,Hzz,'displayname','Hz','linewidth',2);
+ylabel('Field along z');
 
 % %define a range of points spanning the xy plane at z=0
 % x = linspace( -0.05,0.05, 20);
