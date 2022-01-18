@@ -1,655 +1,847 @@
 #include "fintrf.h"
+
+module MagTenseMicroMagIO
+use MicroMagParameters
     
-    module MagTenseMicroMagIO
-    use MicroMagParameters
-        
-    implicit none
+implicit none
+
+contains
+
+
+!>-----------------------------------------
+!> @author Kaspar K. Nielsen, kasparkn@gmail.com, DTU, 2019
+!> Loads the data struct problem from Matlab into a Fortran struct
+!> @param[in] prhs pointer to the Matlab data struct
+!> @param[in] problem struct for the internal Fortran represantation of the problem
+!>-----------------------------------------
+subroutine loadMicroMagProblem( prhs, problem )
+    mwPointer, intent(in) :: prhs
+    type(MicroMagProblem),intent(inout) :: problem
     
-    contains
-    
-    
-    !>-----------------------------------------
-    !> @author Kaspar K. Nielsen, kasparkn@gmail.com, DTU, 2019
-    !> Loads the data struct problem from Matlab into a Fortran struct
-    !> @param[in] prhs pointer to the Matlab data struct
-    !> @param[in] problem struct for the internal Fortran represantation of the problem
-    !>-----------------------------------------
-    subroutine loadMicroMagProblem( prhs, problem )
-        mwPointer, intent(in) :: prhs
-        type(MicroMagProblem),intent(inout) :: problem
-        
-        character(len=10),dimension(:),allocatable :: problemFields
-        mwIndex :: i
-        mwSize :: sx
-        integer :: nFieldsProblem, ntot, nt, nt_Hext, useCuda, status, nt_alpha, useCVODE, nt_conv, nnodes, nvalues, nrows
-        mwPointer :: nGridPtr, LGridPtr, dGridPtr, typeGridPtr, ueaProblemPtr, modeProblemPtr, solverProblemPtr
-        mwPointer :: A0ProblemPtr, MsProblemPtr, K0ProblemPtr, gammaProblemPtr, alpha0ProblemPtr, MaxT0ProblemPtr
-        mwPointer :: ntProblemPtr, m0ProblemPtr, HextProblemPtr, tProblemPtr, useCudaPtr, useCVODEPtr
-        mwPointer :: mxGetField, mxGetPr, mxGetM, mxGetN, mxGetNzmax, mxGetIr, mxGetJc
-        mwPointer :: ntHextProblemPtr, demThresProblemPtr, demApproxPtr, setTimeDisplayProblemPtr
-        mwPointer :: NFileReturnPtr, NReturnPtr, NLoadPtr, mxGetString, NFileLoadPtr
-        mwPointer :: tolProblemPtr, thres_valueProblemPtr
-        mwPointer :: exch_matProblemPtr, irPtr, jcPtr
-        mwPointer :: genericProblemPtr
-        mwPointer :: ptsGridPtr, nodesGridPtr, elementsGridPtr, nnodesGridPtr
-        mwPointer :: valuesPtr, rows_startPtr, rows_endPtr,  colsPtr, nValuesSparsePtr, nRowsSparsePtr
-        integer,dimension(3) :: int_arr
-        real*8,dimension(3) :: real_arr
-        real*8 :: demag_fac
-    
-        !Get the expected names of the fields
-        call getProblemFieldnames( problemFields, nFieldsProblem)
-                   
-        sx = 3
-        i = 1
-        nGridPtr = mxGetField( prhs, i, problemFields(1) )
-        call mxCopyPtrToInteger4( mxGetPr(nGridPtr), int_arr, sx )
-        problem%grid%nx = int_arr(1)
-        problem%grid%ny = int_arr(2)
-        problem%grid%nz = int_arr(3)
-        ntot = product(int_arr)
-        
-        LGridPtr = mxGetField( prhs, i, problemFields(2) )
-        call mxCopyPtrToReal8( mxGetPr(LGridPtr), real_arr, sx )
-        problem%grid%Lx = real_arr(1)
-        problem%grid%Ly = real_arr(2)
-        problem%grid%Lz = real_arr(3)
-        
-        
-        problem%grid%dx = problem%grid%Lx / problem%grid%nx
-        problem%grid%dy = problem%grid%Ly / problem%grid%ny
-        problem%grid%dz = problem%grid%Lz / problem%grid%nz
-        
-        
-        sx = 1
-        typeGridPtr = mxGetField( prhs, i, problemFields(3) )
-        call mxCopyPtrToInteger4(mxGetPr(typeGridPtr), problem%grid%gridType, sx )
-        
-        !Load additional things for a tetrahedron grid
-        if ( problem%grid%gridType .eq. gridTypeTetrahedron ) then
-            !The center points of all the tetrahedron elements           
-            allocate( problem%grid%pts(ntot,3) )
-            sx = ntot * 3
-            ptsGridPtr = mxGetField( prhs, i, problemFields(35) )
-            call mxCopyPtrToReal8(mxGetPr(ptsGridPtr), problem%grid%pts, sx )
-            
-            !The elements of all the tetrahedron elements
-            allocate( problem%grid%elements(4,ntot) )
-            sx = ntot * 4
-            nodesGridPtr = mxGetField( prhs, i, problemFields(36) )
-            call mxCopyPtrToInteger4(mxGetPr(nodesGridPtr), problem%grid%elements, sx )
-            
-            !The number of nodes in the tetrahedron mesh
-            sx = 1
-            nnodesGridPtr = mxGetField( prhs, i, problemFields(38) )
-            call mxCopyPtrToInteger4(mxGetPr(nnodesGridPtr), problem%grid%nnodes, sx )
-            
-            !The nodes of all the tetrahedron elements
-            nnodes = problem%grid%nnodes
-            allocate( problem%grid%nodes(3,nnodes) )
-            sx = nnodes * 3
-            nodesGridPtr = mxGetField( prhs, i, problemFields(37) )
-            call mxCopyPtrToReal8(mxGetPr(nodesGridPtr), problem%grid%nodes, sx )
-            
-            !the number of nodes in the tetrahedron mesh
-            sx = 1
-            nnodesGridPtr = mxGetField( prhs, i, problemFields(38) )
-            call mxCopyPtrToInteger4(mxGetPr(nnodesGridPtr), problem%grid%nnodes, sx )
-        endif
-        
-        !Load additional things for a grid of unstructured prisms
-        if ( problem%grid%gridType .eq. gridTypeUnstructuredPrisms ) then
-            !The center points of all the prisms elements           
-            allocate( problem%grid%pts(ntot,3) )
-            sx = ntot * 3
-            ptsGridPtr = mxGetField( prhs, i, problemFields(35) )
-            call mxCopyPtrToReal8(mxGetPr(ptsGridPtr), problem%grid%pts, sx )
-            
-            
-            !The side lengths of all the prisms
-            allocate( problem%grid%abc(ntot,3) )
-            sx = ntot * 3
-            nodesGridPtr = mxGetField( prhs, i, problemFields(45) )
-            call mxCopyPtrToReal8(mxGetPr(nodesGridPtr), problem%grid%abc, sx )
-            
-        endif
+    character(len=10),dimension(:),allocatable :: problemFields
+    mwIndex :: i
+    mwSize :: sx
+    integer :: nFieldsProblem, ntot, nt, nt_Hext, useCuda, status, nt_alpha, useCVODE, nt_conv, nnodes, nvalues, nrows
+    mwPointer :: nGridPtr, LGridPtr, dGridPtr, typeGridPtr, ueaProblemPtr, modeProblemPtr, solverProblemPtr
+    mwPointer :: A0ProblemPtr, MsProblemPtr, K0ProblemPtr, gammaProblemPtr, alpha0ProblemPtr, MaxT0ProblemPtr
+    mwPointer :: ntProblemPtr, m0ProblemPtr, HextProblemPtr, tProblemPtr, useCudaPtr, useCVODEPtr
+    mwPointer :: mxGetField, mxGetPr, mxGetM, mxGetN, mxGetNzmax, mxGetIr, mxGetJc
+    mwPointer :: ntHextProblemPtr, demThresProblemPtr, demApproxPtr, setTimeDisplayProblemPtr
+    mwPointer :: NFileReturnPtr, NReturnPtr, NLoadPtr, mxGetString, NFileLoadPtr
+    mwPointer :: tolProblemPtr, thres_valueProblemPtr
+    mwPointer :: exch_matProblemPtr, irPtr, jcPtr
+    mwPointer :: genericProblemPtr
+    mwPointer :: ptsGridPtr, nodesGridPtr, elementsGridPtr, nnodesGridPtr
+    mwPointer :: valuesPtr, rows_startPtr, rows_endPtr,  colsPtr, nValuesSparsePtr, nRowsSparsePtr
+    integer,dimension(3) :: int_arr
+    real*8,dimension(3) :: real_arr
+    real*8 :: demag_fac
+
+    !Get the expected names of the fields
+    call getProblemFieldnames( problemFields, nFieldsProblem)
                 
-        !Finished loading the grid------------------------------------------
-        
-        !Start loading the problem
-        !Allocate memory for the easy axis vectors
-        allocate( problem%u_ea(ntot,3) )
-        ueaProblemPtr = mxGetField(prhs,i,problemFields(4))
+    sx = 3
+    i = 1
+    nGridPtr = mxGetField( prhs, i, problemFields(1) )
+    call mxCopyPtrToInteger4( mxGetPr(nGridPtr), int_arr, sx )
+    problem%grid%nx = int_arr(1)
+    problem%grid%ny = int_arr(2)
+    problem%grid%nz = int_arr(3)
+    ntot = product(int_arr)
+    
+    LGridPtr = mxGetField( prhs, i, problemFields(2) )
+    call mxCopyPtrToReal8( mxGetPr(LGridPtr), real_arr, sx )
+    problem%grid%Lx = real_arr(1)
+    problem%grid%Ly = real_arr(2)
+    problem%grid%Lz = real_arr(3)
+    
+    
+    problem%grid%dx = problem%grid%Lx / problem%grid%nx
+    problem%grid%dy = problem%grid%Ly / problem%grid%ny
+    problem%grid%dz = problem%grid%Lz / problem%grid%nz
+    
+    
+    sx = 1
+    typeGridPtr = mxGetField( prhs, i, problemFields(3) )
+    call mxCopyPtrToInteger4(mxGetPr(typeGridPtr), problem%grid%gridType, sx )
+    
+    !Load additional things for a tetrahedron grid
+    if ( problem%grid%gridType .eq. gridTypeTetrahedron ) then
+        !The center points of all the tetrahedron elements
+        allocate( problem%grid%pts(ntot,3) )
         sx = ntot * 3
-        call mxCopyPtrToReal8(mxGetPr(ueaProblemPtr), problem%u_ea, sx )
+        ptsGridPtr = mxGetField( prhs, i, problemFields(35) )
+        call mxCopyPtrToReal8(mxGetPr(ptsGridPtr), problem%grid%pts, sx )
         
+        !The elements of all the tetrahedron elements
+        allocate( problem%grid%elements(4,ntot) )
+        sx = ntot * 4
+        nodesGridPtr = mxGetField( prhs, i, problemFields(36) )
+        call mxCopyPtrToInteger4(mxGetPr(nodesGridPtr), problem%grid%elements, sx )
+        
+        !The number of nodes in the tetrahedron mesh
         sx = 1
-        modeProblemPtr = mxGetField( prhs, i, problemFields(5) )
-        call mxCopyPtrToInteger4(mxGetPr(modeProblemPtr), problem%ProblemMode, sx )
+        nnodesGridPtr = mxGetField( prhs, i, problemFields(38) )
+        call mxCopyPtrToInteger4(mxGetPr(nnodesGridPtr), problem%grid%nnodes, sx )
         
+        !The nodes of all the tetrahedron elements
+        nnodes = problem%grid%nnodes
+        allocate( problem%grid%nodes(3,nnodes) )
+        sx = nnodes * 3
+        nodesGridPtr = mxGetField( prhs, i, problemFields(37) )
+        call mxCopyPtrToReal8(mxGetPr(nodesGridPtr), problem%grid%nodes, sx )
+        
+        !the number of nodes in the tetrahedron mesh
         sx = 1
-        solverProblemPtr = mxGetField( prhs, i, problemFields(6) )
-        call mxCopyPtrToInteger4(mxGetPr(solverProblemPtr), problem%solver, sx )
-        
-        sx = 1
-        A0ProblemPtr = mxGetField( prhs, i, problemFields(7) )
-        call mxCopyPtrToReal8(mxGetPr(A0ProblemPtr), problem%A0, sx )
-        
-        sx = 1
-        MsProblemPtr = mxGetField( prhs, i, problemFields(8) )
-        call mxCopyPtrToReal8(mxGetPr(MsProblemPtr), problem%Ms, sx )
-        
-        sx = 1
-        K0ProblemPtr = mxGetField( prhs, i, problemFields(9) )
-        call mxCopyPtrToReal8(mxGetPr(K0ProblemPtr), problem%K0, sx )
-        
-        sx = 1
-        gammaProblemPtr = mxGetField( prhs, i, problemFields(10) )
-        call mxCopyPtrToReal8(mxGetPr(gammaProblemPtr), problem%gamma, sx )
-        
-        sx = 1
-        alpha0ProblemPtr = mxGetField( prhs, i, problemFields(11) )
-        call mxCopyPtrToReal8(mxGetPr(alpha0ProblemPtr), problem%alpha0, sx )
-        
-        sx = 1
-        MaxT0ProblemPtr = mxGetField( prhs, i, problemFields(12) )
-        call mxCopyPtrToReal8(mxGetPr(MaxT0ProblemPtr), problem%MaxT0, sx )                
-        
-        !load the no. of time steps in the applied field
-        sx = 1
-        ntHextProblemPtr = mxGetField( prhs, i, problemFields(13) )
-        call mxCopyPtrToInteger4(mxGetPr(ntHextProblemPtr), nt_Hext, sx )
-        
-        !Applied field as a function of time evaluated at the timesteps specified in nt_Hext
-        !problem%Hext(:,1) is the time grid while problem%Hext(:,2:4) are the x-,y- and z-components of the applied field
-        sx = nt_Hext * 4
-        allocate( problem%Hext(nt_Hext,4) )
-        HextProblemPtr = mxGetField( prhs, i, problemFields(14) )
-        call mxCopyPtrToReal8(mxGetPr(HextProblemPtr), problem%Hext, sx )
-                
-        !Load the no. of time steps required
-        sx = 1
-        ntProblemPtr = mxGetField( prhs, i, problemFields(15) )
-        call mxCopyPtrToInteger4(mxGetPr(ntProblemPtr), nt, sx )
-        
-        allocate( problem%t(nt) )
-        tProblemPtr = mxGetField(prhs,i,problemFields(16) )
-        sx = nt
-        call mxCopyPtrToReal8(mxGetPr(tProblemPtr), problem%t, sx )
-        
-        !Initial magnetization
-        allocate( problem%m0(3*ntot) )
-        m0ProblemPtr = mxGetField(prhs,i,problemFields(17))
+        nnodesGridPtr = mxGetField( prhs, i, problemFields(38) )
+        call mxCopyPtrToInteger4(mxGetPr(nnodesGridPtr), problem%grid%nnodes, sx )
+    endif
+    
+    !Load additional things for a grid of unstructured prisms
+    if ( problem%grid%gridType .eq. gridTypeUnstructuredPrisms ) then
+        !The center points of all the prisms elements
+        allocate( problem%grid%pts(ntot,3) )
         sx = ntot * 3
-        call mxCopyPtrToReal8(mxGetPr(m0ProblemPtr), problem%m0, sx )
+        ptsGridPtr = mxGetField( prhs, i, problemFields(35) )
+        call mxCopyPtrToReal8(mxGetPr(ptsGridPtr), problem%grid%pts, sx )
         
-        !Demagnetization threshold value        
-        demThresProblemPtr = mxGetField(prhs,i,problemFields(18))
-        sx = 1
-        call mxCopyPtrToReal8(mxGetPr(demThresProblemPtr), demag_fac, sx )
+        
+        !The side lengths of all the prisms
+        allocate( problem%grid%abc(ntot,3) )
+        sx = ntot * 3
+        nodesGridPtr = mxGetField( prhs, i, problemFields(45) )
+        call mxCopyPtrToReal8(mxGetPr(nodesGridPtr), problem%grid%abc, sx )
+        
+    endif
             
-        problem%demag_threshold = sngl(demag_fac)
+    !Finished loading the grid------------------------------------------
+    
+    !Start loading the problem
+    !Allocate memory for the easy axis vectors
+    allocate( problem%u_ea(ntot,3) )
+    ueaProblemPtr = mxGetField(prhs,i,problemFields(4))
+    sx = ntot * 3
+    call mxCopyPtrToReal8(mxGetPr(ueaProblemPtr), problem%u_ea, sx )
+    
+    sx = 1
+    modeProblemPtr = mxGetField( prhs, i, problemFields(5) )
+    call mxCopyPtrToInteger4(mxGetPr(modeProblemPtr), problem%ProblemMode, sx )
+    
+    sx = 1
+    solverProblemPtr = mxGetField( prhs, i, problemFields(6) )
+    call mxCopyPtrToInteger4(mxGetPr(solverProblemPtr), problem%solver, sx )
+    
+    sx = 1
+    A0ProblemPtr = mxGetField( prhs, i, problemFields(7) )
+    call mxCopyPtrToReal8(mxGetPr(A0ProblemPtr), problem%A0, sx )
+    
+    sx = 1
+    MsProblemPtr = mxGetField( prhs, i, problemFields(8) )
+    call mxCopyPtrToReal8(mxGetPr(MsProblemPtr), problem%Ms, sx )
+    
+    sx = 1
+    K0ProblemPtr = mxGetField( prhs, i, problemFields(9) )
+    call mxCopyPtrToReal8(mxGetPr(K0ProblemPtr), problem%K0, sx )
+    
+    sx = 1
+    gammaProblemPtr = mxGetField( prhs, i, problemFields(10) )
+    call mxCopyPtrToReal8(mxGetPr(gammaProblemPtr), problem%gamma, sx )
+    
+    sx = 1
+    alpha0ProblemPtr = mxGetField( prhs, i, problemFields(11) )
+    call mxCopyPtrToReal8(mxGetPr(alpha0ProblemPtr), problem%alpha0, sx )
+    
+    sx = 1
+    MaxT0ProblemPtr = mxGetField( prhs, i, problemFields(12) )
+    call mxCopyPtrToReal8(mxGetPr(MaxT0ProblemPtr), problem%MaxT0, sx )
+    
+    !load the no. of time steps in the applied field
+    sx = 1
+    ntHextProblemPtr = mxGetField( prhs, i, problemFields(13) )
+    call mxCopyPtrToInteger4(mxGetPr(ntHextProblemPtr), nt_Hext, sx )
+    
+    !Applied field as a function of time evaluated at the timesteps specified in nt_Hext
+    !problem%Hext(:,1) is the time grid while problem%Hext(:,2:4) are the x-,y- and z-components of the applied field
+    sx = nt_Hext * 4
+    allocate( problem%Hext(nt_Hext,4) )
+    HextProblemPtr = mxGetField( prhs, i, problemFields(14) )
+    call mxCopyPtrToReal8(mxGetPr(HextProblemPtr), problem%Hext, sx )
+            
+    !Load the no. of time steps required
+    sx = 1
+    ntProblemPtr = mxGetField( prhs, i, problemFields(15) )
+    call mxCopyPtrToInteger4(mxGetPr(ntProblemPtr), nt, sx )
+    
+    allocate( problem%t(nt) )
+    tProblemPtr = mxGetField(prhs,i,problemFields(16) )
+    sx = nt
+    call mxCopyPtrToReal8(mxGetPr(tProblemPtr), problem%t, sx )
+    
+    !Initial magnetization
+    allocate( problem%m0(3*ntot) )
+    m0ProblemPtr = mxGetField(prhs,i,problemFields(17))
+    sx = ntot * 3
+    call mxCopyPtrToReal8(mxGetPr(m0ProblemPtr), problem%m0, sx )
+    
+    !Demagnetization threshold value
+    demThresProblemPtr = mxGetField(prhs,i,problemFields(18))
+    sx = 1
+    call mxCopyPtrToReal8(mxGetPr(demThresProblemPtr), demag_fac, sx )
         
-        sx = 1
-        useCudaPtr = mxGetField( prhs, i, problemFields(19) )
-        call mxCopyPtrToInteger4(mxGetPr(useCudaPtr), useCuda, sx )
-        if ( useCuda .eq. 1 ) then
-            problem%useCuda = useCudaTrue
-        else
-            problem%useCuda = useCudaFalse
-        endif
-                
-        sx = 1
-        demApproxPtr = mxGetField( prhs, i, problemFields(20) )
-        call mxCopyPtrToInteger4(mxGetPr(demApproxPtr), problem%demag_approximation, sx )
-        
-        !flag whether the demag tensor should be returned and if so how
-        sx = 1
-        NReturnPtr = mxGetField( prhs, i, problemFields(21) )
-        call mxCopyPtrToInteger4(mxGetPr(NReturnPtr), problem%demagTensorReturnState, sx )
-        
-        !File for returning the demag tensor to a file on disk (has to have length>2)
-        if ( problem%demagTensorReturnState .gt. 2 ) then
-            !Length of the file name
-            sx = problem%demagTensorReturnState
-            NFileReturnPtr = mxGetField( prhs, i, problemFields(22) )            
-            status = mxGetString( NFileReturnPtr, problem%demagTensorFileOut, sx )
-        endif
-        
-        !flag whether the demag tensor should be loaded
-        sx = 1
-        NLoadPtr = mxGetField( prhs, i, problemFields(23) )
-        call mxCopyPtrToInteger4(mxGetPr(NLoadPtr), problem%demagTensorLoadState, sx )
-        
-        !File for loading the demag tensor to a file on disk (has to have length>2)
-        if ( problem%demagTensorLoadState .gt. 2 ) then
-            !Length of the file name
-            sx = problem%demagTensorLoadState
-            NFileLoadPtr = mxGetField( prhs, i, problemFields(24) )            
-            status = mxGetString( NFileLoadPtr, problem%demagTensorFileIn, sx )
-        endif
-        
-        
-        problem%setTimeDisplay = 100
-        
-        !Set how often to display the timestep in Matlab
-        sx = 1
-        setTimeDisplayProblemPtr = mxGetField( prhs, i, problemFields(25) )
-        call mxCopyPtrToInteger4(mxGetPr(setTimeDisplayProblemPtr), problem%setTimeDisplay, sx )
-        
-        !Load the no. of times in the alpha function
-        sx = 1
-        ntProblemPtr = mxGetField( prhs, i, problemFields(26) )
-        call mxCopyPtrToInteger4(mxGetPr(ntProblemPtr), nt_alpha, sx )
-        
-        !alpha as a function of time evaluated at the timesteps
-        !problem%alpha(:,1) is the time grid while problem%alpha(:,2) are the alpha values
-        sx = nt_alpha * 2
-        allocate( problem%alpha(nt_alpha,2) )
-        HextProblemPtr = mxGetField( prhs, i, problemFields(27) )
-        call mxCopyPtrToReal8(mxGetPr(HextProblemPtr), problem%alpha, sx )
-        
-        sx = 1
-        tolProblemPtr = mxGetField( prhs, i, problemFields(28) )
-        call mxCopyPtrToReal8(mxGetPr(tolProblemPtr), problem%tol, sx )
-        
-        sx = 1
-        thres_valueProblemPtr = mxGetField( prhs, i, problemFields(29) )
-        call mxCopyPtrToReal8(mxGetPr(thres_valueProblemPtr), problem%thres_value, sx )
+    problem%demag_threshold = sngl(demag_fac)
+    
+    sx = 1
+    useCudaPtr = mxGetField( prhs, i, problemFields(19) )
+    call mxCopyPtrToInteger4(mxGetPr(useCudaPtr), useCuda, sx )
+    if ( useCuda .eq. 1 ) then
+        problem%useCuda = useCudaTrue
+    else
+        problem%useCuda = useCudaFalse
+    endif
+            
+    sx = 1
+    demApproxPtr = mxGetField( prhs, i, problemFields(20) )
+    call mxCopyPtrToInteger4(mxGetPr(demApproxPtr), problem%demag_approximation, sx )
+    
+    !flag whether the demag tensor should be returned and if so how
+    sx = 1
+    NReturnPtr = mxGetField( prhs, i, problemFields(21) )
+    call mxCopyPtrToInteger4(mxGetPr(NReturnPtr), problem%demagTensorReturnState, sx )
+    
+    !File for returning the demag tensor to a file on disk (has to have length>2)
+    if ( problem%demagTensorReturnState .gt. 2 ) then
+        !Length of the file name
+        sx = problem%demagTensorReturnState
+        NFileReturnPtr = mxGetField( prhs, i, problemFields(22) )
+        status = mxGetString( NFileReturnPtr, problem%demagTensorFileOut, sx )
+    endif
+    
+    !flag whether the demag tensor should be loaded
+    sx = 1
+    NLoadPtr = mxGetField( prhs, i, problemFields(23) )
+    call mxCopyPtrToInteger4(mxGetPr(NLoadPtr), problem%demagTensorLoadState, sx )
+    
+    !File for loading the demag tensor to a file on disk (has to have length>2)
+    if ( problem%demagTensorLoadState .gt. 2 ) then
+        !Length of the file name
+        sx = problem%demagTensorLoadState
+        NFileLoadPtr = mxGetField( prhs, i, problemFields(24) )
+        status = mxGetString( NFileLoadPtr, problem%demagTensorFileIn, sx )
+    endif
+    
+    
+    problem%setTimeDisplay = 100
+    
+    !Set how often to display the timestep in Matlab
+    sx = 1
+    setTimeDisplayProblemPtr = mxGetField( prhs, i, problemFields(25) )
+    call mxCopyPtrToInteger4(mxGetPr(setTimeDisplayProblemPtr), problem%setTimeDisplay, sx )
+    
+    !Load the no. of times in the alpha function
+    sx = 1
+    ntProblemPtr = mxGetField( prhs, i, problemFields(26) )
+    call mxCopyPtrToInteger4(mxGetPr(ntProblemPtr), nt_alpha, sx )
+    
+    !alpha as a function of time evaluated at the timesteps
+    !problem%alpha(:,1) is the time grid while problem%alpha(:,2) are the alpha values
+    sx = nt_alpha * 2
+    allocate( problem%alpha(nt_alpha,2) )
+    HextProblemPtr = mxGetField( prhs, i, problemFields(27) )
+    call mxCopyPtrToReal8(mxGetPr(HextProblemPtr), problem%alpha, sx )
+    
+    sx = 1
+    tolProblemPtr = mxGetField( prhs, i, problemFields(28) )
+    call mxCopyPtrToReal8(mxGetPr(tolProblemPtr), problem%tol, sx )
+    
+    sx = 1
+    thres_valueProblemPtr = mxGetField( prhs, i, problemFields(29) )
+    call mxCopyPtrToReal8(mxGetPr(thres_valueProblemPtr), problem%thres_value, sx )
 
+    sx = 1
+    useCVODEPtr = mxGetField( prhs, i, problemFields(30) )
+    call mxCopyPtrToInteger4(mxGetPr(useCVODEPtr), useCVODE, sx )
+    if ( useCVODE .eq. 1 ) then
+        problem%useCVODE = useCVODETrue
+    else
+        problem%useCVODE = useCVODEFalse
+    endif
+    
+    !File for loading the sparse exchange tensor from Matlab (for non-uniform grids)
+    if (( problem%grid%gridType .eq. gridTypeTetrahedron ) .or. (problem%grid%gridType .eq. gridTypeUnstructuredPrisms)) then
+        ! Load the CSR sparse information from Matlab
         sx = 1
-        useCVODEPtr = mxGetField( prhs, i, problemFields(30) )
-        call mxCopyPtrToInteger4(mxGetPr(useCVODEPtr), useCVODE, sx )
-        if ( useCVODE .eq. 1 ) then
-            problem%useCVODE = useCVODETrue
-        else
-            problem%useCVODE = useCVODEFalse
-        endif
+        nValuesSparsePtr = mxGetField( prhs, i, problemFields(39) )
+        call mxCopyPtrToInteger4(mxGetPr(nValuesSparsePtr), problem%grid%A_exch_load%nvalues, sx )
+    
+        sx = 1
+        nRowsSparsePtr = mxGetField( prhs, i, problemFields(40) )
+        call mxCopyPtrToInteger4(mxGetPr(nRowsSparsePtr), problem%grid%A_exch_load%nrows, sx )
         
-        !File for loading the sparse exchange tensor from Matlab (for non-uniform grids)
-        if (( problem%grid%gridType .eq. gridTypeTetrahedron ) .or. (problem%grid%gridType .eq. gridTypeUnstructuredPrisms)) then
-            ! Load the CSR sparse information from Matlab
-            sx = 1
-            nValuesSparsePtr = mxGetField( prhs, i, problemFields(39) )
-            call mxCopyPtrToInteger4(mxGetPr(nValuesSparsePtr), problem%grid%A_exch_load%nvalues, sx )
-       
-            sx = 1
-            nRowsSparsePtr = mxGetField( prhs, i, problemFields(40) )
-            call mxCopyPtrToInteger4(mxGetPr(nRowsSparsePtr), problem%grid%A_exch_load%nrows, sx )
+        nvalues = problem%grid%A_exch_load%nvalues
+        nrows = problem%grid%A_exch_load%nrows
+        allocate( problem%grid%A_exch_load%values(nvalues), problem%grid%A_exch_load%rows_start(nrows) , problem%grid%A_exch_load%rows_end(nrows) , problem%grid%A_exch_load%cols(nvalues) )
             
-            nvalues = problem%grid%A_exch_load%nvalues
-            nrows = problem%grid%A_exch_load%nrows
-            allocate( problem%grid%A_exch_load%values(nvalues), problem%grid%A_exch_load%rows_start(nrows) , problem%grid%A_exch_load%rows_end(nrows) , problem%grid%A_exch_load%cols(nvalues) )
-             
-            sx = nvalues
-            valuesPtr = mxGetField( prhs, i, problemFields(41) )
-            call mxCopyPtrToReal4(mxGetPr(valuesPtr), problem%grid%A_exch_load%values, sx )
-            
-            sx = nrows
-            rows_startPtr = mxGetField( prhs, i, problemFields(42) )
-            call mxCopyPtrToInteger4(mxGetPr(rows_startPtr), problem%grid%A_exch_load%rows_start, sx )
+        sx = nvalues
+        valuesPtr = mxGetField( prhs, i, problemFields(41) )
+        call mxCopyPtrToReal4(mxGetPr(valuesPtr), problem%grid%A_exch_load%values, sx )
         
-            sx = nrows
-            rows_endPtr = mxGetField( prhs, i, problemFields(43) )
-            call mxCopyPtrToInteger4(mxGetPr(rows_endPtr), problem%grid%A_exch_load%rows_end, sx )
+        sx = nrows
+        rows_startPtr = mxGetField( prhs, i, problemFields(42) )
+        call mxCopyPtrToInteger4(mxGetPr(rows_startPtr), problem%grid%A_exch_load%rows_start, sx )
+    
+        sx = nrows
+        rows_endPtr = mxGetField( prhs, i, problemFields(43) )
+        call mxCopyPtrToInteger4(mxGetPr(rows_endPtr), problem%grid%A_exch_load%rows_end, sx )
+    
+        sx = nvalues
+        colsPtr = mxGetField( prhs, i, problemFields(44) )
+        call mxCopyPtrToInteger4(mxGetPr(colsPtr), problem%grid%A_exch_load%cols, sx )
+    endif
         
-            sx = nvalues
-            colsPtr = mxGetField( prhs, i, problemFields(44) )
-            call mxCopyPtrToInteger4(mxGetPr(colsPtr), problem%grid%A_exch_load%cols, sx )
-        endif
-          
-        !Load the no. of time steps in the time convergence array
-        sx = 1
-        ntProblemPtr = mxGetField( prhs, i, problemFields(32) )
-        call mxCopyPtrToInteger4(mxGetPr(ntProblemPtr), nt_conv, sx )
-        
-        allocate( problem%t_conv(nt_conv) )
-        genericProblemPtr = mxGetField(prhs,i,problemFields(33) )
-        sx = nt_conv
-        call mxCopyPtrToReal8(mxGetPr(genericProblemPtr), problem%t_conv, sx )
-        
-        sx = 1
-        genericProblemPtr = mxGetField( prhs, i, problemFields(34) )
-        call mxCopyPtrToReal8(mxGetPr(genericProblemPtr), problem%conv_tol, sx )
+    !Load the no. of time steps in the time convergence array
+    sx = 1
+    ntProblemPtr = mxGetField( prhs, i, problemFields(32) )
+    call mxCopyPtrToInteger4(mxGetPr(ntProblemPtr), nt_conv, sx )
+    
+    allocate( problem%t_conv(nt_conv) )
+    genericProblemPtr = mxGetField(prhs,i,problemFields(33) )
+    sx = nt_conv
+    call mxCopyPtrToReal8(mxGetPr(genericProblemPtr), problem%t_conv, sx )
+    
+    sx = 1
+    genericProblemPtr = mxGetField( prhs, i, problemFields(34) )
+    call mxCopyPtrToReal8(mxGetPr(genericProblemPtr), problem%conv_tol, sx )
 
-        !Clean-up 
-        deallocate(problemFields)
-    end subroutine loadMicroMagProblem
-    
-    
-   !>-----------------------------------------
-    !> @author Kaspar K. Nielsen, kasparkn@gmail.com, DTU, 2019
-    !> Returns the solution data struct from Fortran to Matlab
-    !> @param[in] solution struct for the internal Fortran represantation of the solution
-    !> @param[in] plhs pointer to the Matlab data struct    
-    !>-----------------------------------------
-    subroutine returnMicroMagSolution( solution, plhs )
-        type(MicroMagSolution),intent(in) :: solution           !> Solution to be copied to Matlab        
-        mwPointer,intent(inout) :: plhs
-    
-        integer :: ComplexFlag,classid,mxClassIDFromClassName
-        mwSize,dimension(1) :: dims
-        mwSize :: s1,s2,sx,ndim
-        mwSize,dimension(4) :: dims_4
-        mwPointer :: pt,pm,pp,pdem,pext,pexc,pani
-        mwPointer :: mxCreateStructArray, mxCreateDoubleMatrix,mxGetPr,mxCreateNumericMatrix,mxCreateNumericArray
-        mwIndex :: ind
-        character(len=10),dimension(:),allocatable :: fieldnames    
-        integer :: nfields,ntot ,nt
-    
-        call getSolutionFieldnames( fieldnames, nfields)
-    
-        nt = size(solution%t_out)
-        ntot = size(solution%M_out(1,:,1,1))
-        
-        ! Load the result back to Matlab      
-        ComplexFlag = 0
-      
-        dims(1) = 1        
-        sx = 1        
-        ! Create the return array of structs      
-        plhs = mxCreateStructArray( sx, dims, nfields, fieldnames)
-      
-        ind = 1
-        
-        s1 = nt
-        s2 = 1
-        pt = mxCreateDoubleMatrix(s1,s2,ComplexFlag)    
-        sx = s1 * s2
-        call mxCopyReal8ToPtr( solution%t_out, mxGetPr( pt ), sx )
-        call mxSetField( plhs, ind, fieldnames(1), pt )
-          
-        
-        ndim = 4
-        dims_4(1) = nt
-        dims_4(2) = ntot
-        dims_4(3) = size( solution%M_out(1,1,:,1) )
-        dims_4(4) = 3
-        classid = mxClassIDFromClassName( 'double' )
-        !pm = mxCreateDoubleMatrix(s1,s2,ComplexFlag)    
-        pm = mxCreateNumericArray( ndim, dims_4, classid, ComplexFlag)
-        sx = dims_4(1) * dims_4(2) * dims_4(3) * dims_4(4)
-        call mxCopyReal8ToPtr( solution%M_out, mxGetPr( pm ), sx )
-        call mxSetField( plhs, ind, fieldnames(2), pm )
-      
-        
-        s1 = ntot
-        s2 = 3
-        pp = mxCreateDoubleMatrix(s1,s2,ComplexFlag)    
-        sx = s1 * s2
-        call mxCopyReal8ToPtr( solution%pts, mxGetPr( pp ), sx )
-        call mxSetField( plhs, ind, fieldnames(3), pp )
-        
-        
-        
-        ndim = 4
-        dims_4(1) = nt
-        dims_4(2) = ntot
-        dims_4(3) = size( solution%H_exc(1,1,:,1) )
-        dims_4(4) = 3
-        classid = mxClassIDFromClassName( 'double' )
-        pexc = mxCreateNumericArray( ndim, dims_4, classid, ComplexFlag)
-        sx = dims_4(1) * dims_4(2) * dims_4(3) * dims_4(4)
-        call mxCopyReal8ToPtr( solution%H_exc, mxGetPr( pexc ), sx )
-        call mxSetField( plhs, ind, fieldnames(4), pexc )
-        
-        
-        
-        ndim = 4
-        dims_4(1) = nt
-        dims_4(2) = ntot
-        dims_4(3) = size( solution%H_ext(1,1,:,1) )
-        dims_4(4) = 3
-        classid = mxClassIDFromClassName( 'double' )
-        pext = mxCreateNumericArray( ndim, dims_4, classid, ComplexFlag)
-        sx = dims_4(1) * dims_4(2) * dims_4(3) * dims_4(4)
-        call mxCopyReal8ToPtr( solution%H_ext, mxGetPr( pext ), sx )
-        call mxSetField( plhs, ind, fieldnames(5), pext )
-        
-        
-        
-        ndim = 4
-        dims_4(1) = nt
-        dims_4(2) = ntot
-        dims_4(3) = size( solution%H_dem(1,1,:,1) )
-        dims_4(4) = 3
-        classid = mxClassIDFromClassName( 'double' )
-        pdem = mxCreateNumericArray( ndim, dims_4, classid, ComplexFlag)
-        sx = dims_4(1) * dims_4(2) * dims_4(3) * dims_4(4)
-        call mxCopyReal8ToPtr( solution%H_dem, mxGetPr( pdem ), sx )
-        call mxSetField( plhs, ind, fieldnames(6), pdem )
-        
-        
-        
-        ndim = 4
-        dims_4(1) = nt
-        dims_4(2) = ntot
-        dims_4(3) = size( solution%H_ani(1,1,:,1) )
-        dims_4(4) = 3
-        classid = mxClassIDFromClassName( 'double' )
-        pani = mxCreateNumericArray( ndim, dims_4, classid, ComplexFlag)
-        sx = dims_4(1) * dims_4(2) * dims_4(3) * dims_4(4)
-        call mxCopyReal8ToPtr( solution%H_ani, mxGetPr( pani ), sx )
-        call mxSetField( plhs, ind, fieldnames(7), pani )
-        
-       
-        !Clean up
-        deallocate(fieldnames)
-    
-    end subroutine returnMicroMagSolution
-    
-    
-    !>-----------------------------------------
-    !> @author Kaspar K. Nielsen, kasparkn@gmail.com, DTU, 2019
-    !> Returns an array with the names of the fields expected in the MicroMagProblem struct
-    !> @param[inout] fieldnames, array of the names of the fields
-    !> @param[inout] nfields the no. of elements in fieldnames
-    !>-----------------------------------------
-    subroutine getProblemFieldnames( fieldnames, nfields)
-        integer,intent(out) :: nfields        
-        integer,parameter :: nf=45
-        character(len=10),dimension(:),intent(out),allocatable :: fieldnames
-            
-        nfields = nf
-        allocate(fieldnames(nfields))
-        
-        !! Setup the names of the members of the input struct
-        fieldnames(1) = 'grid_n'
-        fieldnames(2) = 'grid_L'
-        fieldnames(3) = 'grid_type'
-        fieldnames(4) = 'u_ea'
-        fieldnames(5) = 'ProblemMode'
-        fieldnames(6) = 'solver'
-        fieldnames(7) = 'A0'
-        fieldnames(8) = 'Ms'
-        fieldnames(9) = 'K0'
-        fieldnames(10) = 'gamma'
-        fieldnames(11) = 'alpha'
-        fieldnames(12) = 'MaxT0'
-        fieldnames(13) = 'nt_Hext'
-        fieldnames(14) = 'Hext'    
-        fieldnames(15) = 'nt'
-        fieldnames(16) = 't'
-        fieldnames(17) = 'm0'
-        fieldnames(18) = 'dem_thres'
-        fieldnames(19) = 'useCuda'
-        fieldnames(20) = 'dem_appr'        
-        fieldnames(21) = 'N_ret'
-        fieldnames(22) = 'N_file_out'
-        fieldnames(23) = 'N_load'
-        fieldnames(24) = 'N_file_in'
-        fieldnames(25) = 'setTimeDis'
-        fieldnames(26) = 'nt_alpha'
-        fieldnames(27) = 'alphat'
-        fieldnames(28) = 'tol'
-        fieldnames(29) = 'thres'
-        fieldnames(30) = 'useCVODE'
-        fieldnames(31) = 'exch_mat'
-        fieldnames(32) = 'nt_conv'
-        fieldnames(33) = 't_conv'
-        fieldnames(34) = 'conv_tol'
-        fieldnames(35) = 'grid_pts'
-        fieldnames(36) = 'grid_ele'
-        fieldnames(37) = 'grid_nod'
-        fieldnames(38) = 'grid_nnod'
-        fieldnames(39) = 'exch_nval'
-        fieldnames(40) = 'exch_nrow'
-        fieldnames(41) = 'exch_val'
-        fieldnames(42) = 'exch_rows'
-        fieldnames(43) = 'exch_rowe'
-        fieldnames(44) = 'exch_col'
-        fieldnames(45) = 'grid_abc'
-        
-    end subroutine getProblemFieldnames
-    
-   
-    
-     !>-----------------------------------------
-    !> @author Kaspar K. Nielsen, kasparkn@gmail.com, DTU, 2019
-    !> Returns an array with the names of the fields expected in the MicroMagSolution struct
-    !> @param[inout] fieldnames, array of the names of the fields
-    !> @param[inout] nfields the no. of elements in fieldnames
-    !>-----------------------------------------
-    subroutine getSolutionFieldnames( fieldnames, nfields)
-        integer,intent(out) :: nfields
-        integer,parameter :: nf=7
-        character(len=10),dimension(:),intent(out),allocatable :: fieldnames
-            
-        nfields = nf
-        allocate(fieldnames(nfields))
-        
-        !! Setup the names of the members of the input struct
-        fieldnames(1) = 't'
-        fieldnames(2) = 'M'
-        fieldnames(3) = 'pts'
-        fieldnames(4) = 'H_exc'
-        fieldnames(5) = 'H_ext'
-        fieldnames(6) = 'H_dem'
-        fieldnames(7) = 'H_ani'
-        
-        
-        
-    end subroutine getSolutionFieldnames
-    
-    !>----------------------------------------
-    !> Kaspar K. Nielsen, kasparkn@gmail.com, January 2020
-    !> Writes the demag tensors to disk given a filename in problem
-    !> @params[in] problem the struct containing the entire problem
-    !>----------------------------------------    
-    subroutine writeDemagTensorToDisk( problem )
-    type(MicroMagProblem), intent(in) :: problem
-    
-    integer :: n            !> No. of elements in the grid
-    
-    
-    n = problem%grid%nx * problem%grid%ny * problem%grid%nz
-        
-            open (11, file=problem%demagTensorFileOut,	&
-			        status='unknown', form='unformatted',	&
-			        access='direct', recl=1*n*n)
+    !Clean-up
+    deallocate(problemFields)
+end subroutine loadMicroMagProblem
 
-        write(11,rec=1) problem%Kxx
-        write(11,rec=2) problem%Kxy
-        write(11,rec=3) problem%Kxz
-        write(11,rec=4) problem%Kyy
-        write(11,rec=5) problem%Kyz
-        write(11,rec=6) problem%Kzz
+
+!>-----------------------------------------
+!> @author Kaspar K. Nielsen, kasparkn@gmail.com, DTU, 2019
+!> Returns the solution data struct from Fortran to Matlab
+!> @param[in] solution struct for the internal Fortran represantation of the solution
+!> @param[in] plhs pointer to the Matlab data struct
+!>-----------------------------------------
+subroutine returnMicroMagSolution( solution, plhs )
+    type(MicroMagSolution),intent(in) :: solution           !> Solution to be copied to Matlab        
+    mwPointer,intent(inout) :: plhs
+
+    integer :: ComplexFlag,classid,mxClassIDFromClassName
+    mwSize,dimension(1) :: dims
+    mwSize :: s1,s2,sx,ndim
+    mwSize,dimension(4) :: dims_4
+    mwPointer :: pt,pm,pp,pdem,pext,pexc,pani
+    mwPointer :: mxCreateStructArray, mxCreateDoubleMatrix,mxGetPr,mxCreateNumericMatrix,mxCreateNumericArray
+    mwIndex :: ind
+    character(len=10),dimension(:),allocatable :: fieldnames
+    integer :: nfields, ntot ,nt
+
+    call getSolutionFieldnames( fieldnames, nfields)
+
+    nt = size(solution%t_out)
+    ntot = size(solution%M_out(1,:,1,1))
     
+    ! Load the result back to Matlab
+    ComplexFlag = 0
+    
+    dims(1) = 1
+    sx = 1
+    ! Create the return array of structs
+    plhs = mxCreateStructArray( sx, dims, nfields, fieldnames)
+    
+    ind = 1
+    
+    s1 = nt
+    s2 = 1
+    pt = mxCreateDoubleMatrix(s1,s2,ComplexFlag)
+    sx = s1 * s2
+    call mxCopyReal8ToPtr( solution%t_out, mxGetPr( pt ), sx )
+    call mxSetField( plhs, ind, fieldnames(1), pt )
+        
+    
+    ndim = 4
+    dims_4(1) = nt
+    dims_4(2) = ntot
+    dims_4(3) = size( solution%M_out(1,1,:,1) )
+    dims_4(4) = 3
+    classid = mxClassIDFromClassName( 'double' )
+    !pm = mxCreateDoubleMatrix(s1,s2,ComplexFlag)
+    pm = mxCreateNumericArray( ndim, dims_4, classid, ComplexFlag)
+    sx = dims_4(1) * dims_4(2) * dims_4(3) * dims_4(4)
+    call mxCopyReal8ToPtr( solution%M_out, mxGetPr( pm ), sx )
+    call mxSetField( plhs, ind, fieldnames(2), pm )
+    
+    
+    s1 = ntot
+    s2 = 3
+    pp = mxCreateDoubleMatrix(s1,s2,ComplexFlag)
+    sx = s1 * s2
+    call mxCopyReal8ToPtr( solution%pts, mxGetPr( pp ), sx )
+    call mxSetField( plhs, ind, fieldnames(3), pp )
+    
+    
+    
+    ndim = 4
+    dims_4(1) = nt
+    dims_4(2) = ntot
+    dims_4(3) = size( solution%H_exc(1,1,:,1) )
+    dims_4(4) = 3
+    classid = mxClassIDFromClassName( 'double' )
+    pexc = mxCreateNumericArray( ndim, dims_4, classid, ComplexFlag)
+    sx = dims_4(1) * dims_4(2) * dims_4(3) * dims_4(4)
+    call mxCopyReal8ToPtr( solution%H_exc, mxGetPr( pexc ), sx )
+    call mxSetField( plhs, ind, fieldnames(4), pexc )
+    
+    
+    
+    ndim = 4
+    dims_4(1) = nt
+    dims_4(2) = ntot
+    dims_4(3) = size( solution%H_ext(1,1,:,1) )
+    dims_4(4) = 3
+    classid = mxClassIDFromClassName( 'double' )
+    pext = mxCreateNumericArray( ndim, dims_4, classid, ComplexFlag)
+    sx = dims_4(1) * dims_4(2) * dims_4(3) * dims_4(4)
+    call mxCopyReal8ToPtr( solution%H_ext, mxGetPr( pext ), sx )
+    call mxSetField( plhs, ind, fieldnames(5), pext )
+    
+    
+    
+    ndim = 4
+    dims_4(1) = nt
+    dims_4(2) = ntot
+    dims_4(3) = size( solution%H_dem(1,1,:,1) )
+    dims_4(4) = 3
+    classid = mxClassIDFromClassName( 'double' )
+    pdem = mxCreateNumericArray( ndim, dims_4, classid, ComplexFlag)
+    sx = dims_4(1) * dims_4(2) * dims_4(3) * dims_4(4)
+    call mxCopyReal8ToPtr( solution%H_dem, mxGetPr( pdem ), sx )
+    call mxSetField( plhs, ind, fieldnames(6), pdem )
+    
+    
+    
+    ndim = 4
+    dims_4(1) = nt
+    dims_4(2) = ntot
+    dims_4(3) = size( solution%H_ani(1,1,:,1) )
+    dims_4(4) = 3
+    classid = mxClassIDFromClassName( 'double' )
+    pani = mxCreateNumericArray( ndim, dims_4, classid, ComplexFlag)
+    sx = dims_4(1) * dims_4(2) * dims_4(3) * dims_4(4)
+    call mxCopyReal8ToPtr( solution%H_ani, mxGetPr( pani ), sx )
+    call mxSetField( plhs, ind, fieldnames(7), pani )
+    
+    
+    !Clean up
+    deallocate(fieldnames)
+
+end subroutine returnMicroMagSolution
+
+
+!>-----------------------------------------
+!> @author Kaspar K. Nielsen, kasparkn@gmail.com, DTU, 2019
+!> Returns an array with the names of the fields expected in the MicroMagProblem struct
+!> @param[inout] fieldnames, array of the names of the fields
+!> @param[inout] nfields the no. of elements in fieldnames
+!>-----------------------------------------
+subroutine getProblemFieldnames( fieldnames, nfields)
+    integer,intent(out) :: nfields
+    integer,parameter :: nf=45
+    character(len=10),dimension(:),intent(out),allocatable :: fieldnames
+        
+    nfields = nf
+    allocate(fieldnames(nfields))
+    
+    !! Setup the names of the members of the input struct
+    fieldnames(1) = 'grid_n'
+    fieldnames(2) = 'grid_L'
+    fieldnames(3) = 'grid_type'
+    fieldnames(4) = 'u_ea'
+    fieldnames(5) = 'ProblemMode'
+    fieldnames(6) = 'solver'
+    fieldnames(7) = 'A0'
+    fieldnames(8) = 'Ms'
+    fieldnames(9) = 'K0'
+    fieldnames(10) = 'gamma'
+    fieldnames(11) = 'alpha'
+    fieldnames(12) = 'MaxT0'
+    fieldnames(13) = 'nt_Hext'
+    fieldnames(14) = 'Hext'
+    fieldnames(15) = 'nt'
+    fieldnames(16) = 't'
+    fieldnames(17) = 'm0'
+    fieldnames(18) = 'dem_thres'
+    fieldnames(19) = 'useCuda'
+    fieldnames(20) = 'dem_appr'
+    fieldnames(21) = 'N_ret'
+    fieldnames(22) = 'N_file_out'
+    fieldnames(23) = 'N_load'
+    fieldnames(24) = 'N_file_in'
+    fieldnames(25) = 'setTimeDis'
+    fieldnames(26) = 'nt_alpha'
+    fieldnames(27) = 'alphat'
+    fieldnames(28) = 'tol'
+    fieldnames(29) = 'thres'
+    fieldnames(30) = 'useCVODE'
+    fieldnames(31) = 'exch_mat'
+    fieldnames(32) = 'nt_conv'
+    fieldnames(33) = 't_conv'
+    fieldnames(34) = 'conv_tol'
+    fieldnames(35) = 'grid_pts'
+    fieldnames(36) = 'grid_ele'
+    fieldnames(37) = 'grid_nod'
+    fieldnames(38) = 'grid_nnod'
+    fieldnames(39) = 'exch_nval'
+    fieldnames(40) = 'exch_nrow'
+    fieldnames(41) = 'exch_val'
+    fieldnames(42) = 'exch_rows'
+    fieldnames(43) = 'exch_rowe'
+    fieldnames(44) = 'exch_col'
+    fieldnames(45) = 'grid_abc'
+    
+end subroutine getProblemFieldnames
+
+
+
+    !>-----------------------------------------
+!> @author Kaspar K. Nielsen, kasparkn@gmail.com, DTU, 2019
+!> Returns an array with the names of the fields expected in the MicroMagSolution struct
+!> @param[inout] fieldnames, array of the names of the fields
+!> @param[inout] nfields the no. of elements in fieldnames
+!>-----------------------------------------
+subroutine getSolutionFieldnames( fieldnames, nfields)
+    integer,intent(out) :: nfields
+    integer,parameter :: nf=7
+    character(len=10),dimension(:),intent(out),allocatable :: fieldnames
+        
+    nfields = nf
+    allocate(fieldnames(nfields))
+    
+    !! Setup the names of the members of the input struct
+    fieldnames(1) = 't'
+    fieldnames(2) = 'M'
+    fieldnames(3) = 'pts'
+    fieldnames(4) = 'H_exc'
+    fieldnames(5) = 'H_ext'
+    fieldnames(6) = 'H_dem'
+    fieldnames(7) = 'H_ani'
+    
+    
+    
+end subroutine getSolutionFieldnames
+
+!>----------------------------------------
+!> Kaspar K. Nielsen, kasparkn@gmail.com, January 2020
+!> Writes the demag tensors to disk given a filename in problem
+!> @params[in] problem the struct containing the entire problem
+!>----------------------------------------
+subroutine writeDemagTensorToDisk( problem )
+type(MicroMagProblem), intent(in) :: problem
+
+integer :: n            !> No. of elements in the grid
+
+
+n = problem%grid%nx * problem%grid%ny * problem%grid%nz
+    
+        open (11, file=problem%demagTensorFileOut,	&
+                status='unknown', form='unformatted',	&
+                access='direct', recl=1*n*n)
+
+    write(11,rec=1) problem%Kxx
+    write(11,rec=2) problem%Kxy
+    write(11,rec=3) problem%Kxz
+    write(11,rec=4) problem%Kyy
+    write(11,rec=5) problem%Kyz
+    write(11,rec=6) problem%Kzz
+
+    close(11)
+    
+
+end subroutine writeDemagTensorToDisk
+
+
+!>----------------------------------------
+!> Kaspar K. Nielsen, kasparkn@gmail.com, January 2020
+!> Loads the demag tensors from disk given a file in problem
+!> @params[inout] problem the struct containing the entire problem
+!>----------------------------------------
+subroutine loadDemagTensorFromDisk( problem )
+type( MicroMagProblem ), intent(inout) :: problem
+integer :: n
+
+        n = problem%grid%nx * problem%grid%ny * problem%grid%nz
+        
+        
+            open (11, file=problem%demagTensorFileIn,	&
+                    status='unknown', form='unformatted',	&
+                    access='direct', recl=1*n*n)
+
+        read(11,rec=1) problem%Kxx
+        read(11,rec=2) problem%Kxy
+        read(11,rec=3) problem%Kxz
+        read(11,rec=4) problem%Kyy
+        read(11,rec=5) problem%Kyz
+        read(11,rec=6) problem%Kzz
+
         close(11)
-        
-    
-    end subroutine writeDemagTensorToDisk
-    
-    
-    !>----------------------------------------
-    !> Kaspar K. Nielsen, kasparkn@gmail.com, January 2020
-    !> Loads the demag tensors from disk given a file in problem
-    !> @params[inout] problem the struct containing the entire problem
-    !>----------------------------------------    
-    subroutine loadDemagTensorFromDisk( problem )
-    type( MicroMagProblem ), intent(inout) :: problem
-    integer :: n
-    
-            n = problem%grid%nx * problem%grid%ny * problem%grid%nz
-            
-            
-             open (11, file=problem%demagTensorFileIn,	&
-			           status='unknown', form='unformatted',	&
-			           access='direct', recl=1*n*n)
 
-            read(11,rec=1) problem%Kxx
-            read(11,rec=2) problem%Kxy
-            read(11,rec=3) problem%Kxz
-            read(11,rec=4) problem%Kyy
-            read(11,rec=5) problem%Kyz
-            read(11,rec=6) problem%Kzz
+
+
+end subroutine loadDemagTensorFromDisk
+
+!--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+!>
+!! Routine for displaying progress within Matlab
+subroutine displayMatlabMessage( mess )
+    character(*),intent(in) :: mess
+
+    integer :: mexCallMATLAB, nlhs_cb, nrhs_cb, tmp
+    mwPointer plhs_cb(1), prhs_cb(1),mxCreateString
+    character*(4) functionName_cb
+    logical :: ex
+
     
-            close(11)
+    !! test if we are inside Matlab or called from a stand-alone. The simple test
+    !! is whether io.txt exists in the current path (false for Matlab, true for stand-alone)
+    !! nothing bad should happen if in fact we are called from ML but the file somehow
+    !! exists - the written output will just not be shown to the user
+
+    inquire( file='io.txt', EXIST=ex )
+
+    if ( ex .eq. .true. ) then
+        write(*,*) mess
+    else
+        functionName_cb = "disp"
+        nlhs_cb = 0
+        nrhs_cb = 1
     
+        prhs_cb(1) = mxCreateString(mess)
     
+        tmp = mexCallMATLAB(nlhs_cb, plhs_cb, nrhs_cb, prhs_cb, "disp")
+    endif
+
+end subroutine displayMatlabMessage
+
+subroutine displayMatlabProgressMessage( mess, prog )
+    character(*),intent(in) :: mess
+    integer,intent(in) :: prog
+    character*(4) :: prog_str
+    character(len=8) :: fmt
     
-    end subroutine loadDemagTensorFromDisk
+
+    fmt = '(I4.2)'
+    write (prog_str,fmt) prog
     
-    !--------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-    !>
-    !! Routine for displaying progress within Matlab
-    subroutine displayMatlabMessage( mess )
-        character(*),intent(in) :: mess
+    call displayMatlabMessage( mess )
+    call displayMatlabMessage( prog_str )
     
-        integer :: mexCallMATLAB, nlhs_cb, nrhs_cb, tmp
-        mwPointer plhs_cb(1), prhs_cb(1),mxCreateString
-        character*(4) functionName_cb
-        logical :: ex
-    
-        
-        !! test if we are inside Matlab or called from a stand-alone. The simple test
-        !! is whether io.txt exists in the current path (false for Matlab, true for stand-alone)
-        !! nothing bad should happen if in fact we are called from ML but the file somehow
-        !! exists - the written output will just not be shown to the user
-    
-        inquire( file='io.txt', EXIST=ex )
-    
-        if ( ex .eq. .true. ) then
-            write(*,*) mess
-        else            
-            functionName_cb = "disp"
-            nlhs_cb = 0
-            nrhs_cb = 1
-      
-            prhs_cb(1) = mxCreateString(mess)
-      
-            tmp = mexCallMATLAB(nlhs_cb, plhs_cb, nrhs_cb, prhs_cb, "disp")
-        endif
-    
-    end subroutine displayMatlabMessage
-    
-    subroutine displayMatlabProgressMessage( mess, prog )
-        character(*),intent(in) :: mess
-        integer,intent(in) :: prog
-        character*(4) :: prog_str   
-        character(len=8) :: fmt
-        
-    
-        fmt = '(I4.2)'
-        write (prog_str,fmt) prog
-        
-        call displayMatlabMessage( mess )
-        call displayMatlabMessage( prog_str )
-        
-    end subroutine displayMatlabProgressMessage
-    
-    subroutine displayMatlabProgessTime( mess, time  )
-        character(*),intent(in) :: mess
-        real,intent(in) :: time
-        character*(4) :: prog_str   
-                
+end subroutine displayMatlabProgressMessage
+
+subroutine displayMatlabProgessTime( mess, time  )
+    character(*),intent(in) :: mess
+    real,intent(in) :: time
+    character*(4) :: prog_str
             
-        write (prog_str,'(F4.2)') time
         
-        call displayMatlabMessage( mess )
-        call displayMatlabMessage( prog_str )
+    write (prog_str,'(F4.2)') time
+    
+    call displayMatlabMessage( mess )
+    call displayMatlabMessage( prog_str )
+    
+end subroutine displayMatlabProgessTime
+
+
+subroutine loadMicroMagProblemPy( ntot, grid_n, grid_L, grid_type, u_ea, ProblemMode, solver, A0, Ms, K0, &
+    gamma, alpha, MaxT0, nt_Hext, Hext, nt, t, m0, dem_thres, useCuda, dem_appr, N_ret, N_file_out, &
+    N_load, N_file_in, setTimeDis, nt_alpha, alphat, tol, thres, useCVODE, nt_conv, t_conv, &
+    conv_tol, grid_pts, grid_ele, grid_nod, grid_nnod, exch_nval, exch_nrow, exch_val, exch_rows, &
+    exch_rowe, exch_col, grid_abc, problem )
+    
+    integer(4),dimension(3),intent(in) :: grid_n
+    real(8),dimension(3),intent(in) :: grid_L
+    integer(4),dimension(3),intent(in) :: grid_type
+    real(8),dimension(ntot, 3),intent(in) :: grid_pts
+    integer(4),dimension(4, ntot),intent(in) :: grid_ele
+    real(8),dimension(grid_nnod, 3),intent(in) :: grid_nod
+    real(8),dimension(ntot, 3),intent(in) :: grid_abc
+    real(8),dimension(ntot, 3),intent(in) :: u_ea
+    real(8),dimension(nt_Hext, 4),intent(in) :: Hext
+    real(8),dimension(nt),intent(in) :: t
+    real(8),dimension(3*ntot),intent(in) :: m0
+    real(8),dimension(nt_alpha,2),intent(in) :: alphat
+    real(4),dimension(exch_nval),intent(in) :: exch_val
+    integer(4),dimension(exch_nrow),intent(in) :: exch_rows, exch_rowe
+    integer(4),dimension(exch_nval),intent(in) :: exch_col
+    real(8),dimension(nt_conv),intent(in) :: t_conv
+    integer(4),intent(in) :: ntot, grid_nnod, ProblemMode, solver, nt_Hext, nt, useCuda, dem_appr
+    integer(4),intent(in) :: N_ret, N_load, setTimeDis, nt_alpha, useCVODE, exch_nval, exch_nrow, nt_conv
+    real(8),intent(in) :: A0, Ms, K0, gamma, alpha, MaxT0, dem_thres, tol, thres, conv_tol
+    character(*),intent(in) :: N_file_in, N_file_out
+
+    type(MicroMagProblem),intent(inout) :: problem
+
+    problem%grid%nx = grid_n(1)
+    problem%grid%ny = grid_n(2)
+    problem%grid%nz = grid_n(3)
+    ntot = product(int_arr)
+
+    problem%grid%Lx = grid_L(1)
+    problem%grid%Ly = grid_L(2)
+    problem%grid%Lz = grid_L(3)
+
+    problem%grid%dx = problem%grid%Lx / problem%grid%nx
+    problem%grid%dy = problem%grid%Ly / problem%grid%ny
+    problem%grid%dz = problem%grid%Lz / problem%grid%nz
+
+    problem%grid%gridType = grid_type
+
+    !Load additional things for a tetrahedron grid
+    if ( problem%grid%gridType .eq. gridTypeTetrahedron ) then
+        !The center points of all the tetrahedron elements           
+        allocate( problem%grid%pts(ntot,3) )
+        problem%grid%pts = grid_pts
         
-    end subroutine displayMatlabProgessTime
+        !The elements of all the tetrahedron elements
+        allocate( problem%grid%elements(4,ntot) )
+        problem%grid%elements = grid_ele
+        
+        !The number of nodes in the tetrahedron mesh
+        problem%grid%nnodes = grid_nnod
+        
+        !The nodes of all the tetrahedron elements
+        allocate( problem%grid%nodes(3,grid_nnod) )
+        problem%grid%nodes = grid_nod
+        
+        !the number of nodes in the tetrahedron mesh
+        problem%grid%nnodes = grid_nnod
+    endif
     
-    end module MagTenseMicroMagIO
+    !Load additional things for a grid of unstructured prisms
+    if ( problem%grid%gridType .eq. gridTypeUnstructuredPrisms ) then
+        !The center points of all the prisms elements           
+        allocate( problem%grid%pts(ntot,3) )
+        problem%grid%pts = grid_pts
+        
+        !The side lengths of all the prisms
+        allocate( problem%grid%abc(ntot,3) )
+        problem%grid%abc = grid_abc
+        
+    endif
+
+    !Finished loading the grid------------------------------------------
     
+    !Start loading the problem
+    !Allocate memory for the easy axis vectors
+    allocate( problem%u_ea(ntot,3) )
+    problem%u_ea = u_ea
+    
+    problem%ProblemMode = ProblemMode
+    problem%solver = solver
+    problem%A0 = A0
+    problem%Ms = Ms
+    problem%K0 = K0
+    problem%gamma = gamma
+    problem%alpha0 = alpha
+    problem%MaxT0 = MaxT0
+    
+    !Applied field as a function of time evaluated at the timesteps specified in nt_Hext
+    !problem%Hext(:,1) is the time grid while problem%Hext(:,2:4) are the x-,y- and z-components of the applied field
+    problem%Hext = Hext
+    
+    allocate( problem%t(nt) )
+    problem%t = t
+    
+    !Initial magnetization
+    allocate( problem%m0(3*ntot) )
+    problem%m0 = m0
+    
+    !Demagnetization threshold value
+    demag_fac = dem_thres
+    problem%demag_threshold = sngl(demag_fac)
+    
+    if ( useCuda .eq. 1 ) then
+        problem%useCuda = useCudaTrue
+    else
+        problem%useCuda = useCudaFalse
+    endif
+            
+    problem%demag_approximation = dem_appr
+    
+    !flag whether the demag tensor should be returned and if so how
+    problem%demagTensorReturnState = N_ret
+    
+    !File for returning the demag tensor to a file on disk (has to have length>2)
+    if ( problem%demagTensorReturnState .gt. 2 ) then
+        !Length of the file name
+        problem%demagTensorFileOut = N_file_out
+    endif
+    
+    !flag whether the demag tensor should be loaded
+    problem%demagTensorLoadState = N_load
+    
+    !File for loading the demag tensor to a file on disk (has to have length>2)
+    if ( problem%demagTensorLoadState .gt. 2 ) then
+        !Length of the file name
+        problem%demagTensorFileIn = N_file_in
+    endif
+    
+    problem%setTimeDisplay = 100
+    
+    !Set how often to display the timestep in Matlab
+    problem%setTimeDisplay = setTimeDis
+    
+    !alpha as a function of time evaluated at the timesteps
+    !problem%alpha(:,1) is the time grid while problem%alpha(:,2) are the alpha values
+    problem%alpha = alphat
+    
+    problem%tol = tol
+    problem%thres_value = thres
+
+    if ( useCVODE .eq. 1 ) then
+        problem%useCVODE = useCVODETrue
+    else
+        problem%useCVODE = useCVODEFalse
+    endif
+
+    !File for loading the sparse exchange tensor from Matlab (for non-uniform grids)
+    if (( problem%grid%gridType .eq. gridTypeTetrahedron ) .or. (problem%grid%gridType .eq. gridTypeUnstructuredPrisms)) then
+        ! Load the CSR sparse information from Matlab
+        problem%grid%A_exch_load%nvalues = exch_nval
+        problem%grid%A_exch_load%nrows = exch_nrow
+        
+        allocate( problem%grid%A_exch_load%values(exch_nval), problem%grid%A_exch_load%rows_start(exch_nrow) , problem%grid%A_exch_load%rows_end(exch_nrow) , problem%grid%A_exch_load%cols(exch_val) )
+            
+        problem%grid%A_exch_load%values = exch_val
+        problem%grid%A_exch_load%rows_start = exch_rows
+        problem%grid%A_exch_load%rows_end = exch_rowe
+        problem%grid%A_exch_load%cols = exch_col
+    endif
+        
+    !Load the no. of time steps in the time convergence array        
+    allocate( problem%t_conv(nt_conv) )
+    problem%t_conv = t_conv
+    problem%conv_tol = conv_tol
+    
+end subroutine loadMicroMagProblemPy
+
+
+subroutine returnMicroMagSolutionPy( solution, nt, ntot, ndim, t, M, pts, H_exc, H_ext, H_dem, H_ani )
+    type(MicroMagSolution),intent(in) :: solution
+    real(8),dimension(nt),intent(out) :: t
+    real(8),dimension(nt,ntot,ndim,3),intent(out) :: M, H_exc, H_ext, H_dem, H_ani
+    real(8),dimension(ntot,nt),intent(out) :: pts
+    integer,intent(in) :: ntot, nt, ndim
+
+    t = solution%t_out
+    M = solution%M_out
+    pts = solution%pts
+    H_exc = solution%H_exc
+    H_ext = solution%H_ext
+    H_dem = solution%H_dem
+    H_ani = solution%H_ani
+
+end subroutine returnMicroMagSolutionPy
+
+
+end module MagTenseMicroMagIO
