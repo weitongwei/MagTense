@@ -247,241 +247,241 @@ private MTdmdt, MTy_out,MTf_vec
     !> @param[inout] t_out output array with the times at which y_i are found
     !> @param[inout] y_out output array with the y_i values
     !---------------------------------------------------------------------------
-#if USE_CVODE
-    subroutine MagTense_CVODEsuite( neq, t, nt, ystart,  t_out, y_out, tol, callback )
-	use, intrinsic :: iso_c_binding
+! #if USE_CVODE
+!     subroutine MagTense_CVODEsuite( neq, t, nt, ystart,  t_out, y_out, tol, callback )
+! 	use, intrinsic :: iso_c_binding
 
-    use fcvode_mod                   ! Fortran interface to CVODE
-    use fnvector_serial_mod          ! Fortran interface to serial N_Vector
-    use fsunmatrix_dense_mod         ! Fortran interface to dense SUNMatrix
-    use fsunlinsol_dense_mod         ! Fortran interface to dense SUNLinearSolver
-    use fsunnonlinsol_fixedpoint_mod ! Fortran interface to fixed-point nonlinear solver
-    !use ode_mod                     ! ODE functions
+!     use fcvode_mod                   ! Fortran interface to CVODE
+!     use fnvector_serial_mod          ! Fortran interface to serial N_Vector
+!     use fsunmatrix_dense_mod         ! Fortran interface to dense SUNMatrix
+!     use fsunlinsol_dense_mod         ! Fortran interface to dense SUNLinearSolver
+!     use fsunnonlinsol_fixedpoint_mod ! Fortran interface to fixed-point nonlinear solver
+!     !use ode_mod                     ! ODE functions
 
-    ! local variables
-    integer(c_int),intent(in) :: neq,nt                   ! number of eq. and timesteps
-    real(c_double),dimension(nt),intent(in) :: t          ! initial time
-    real(c_double),dimension(nt),intent(inout) :: t_out   ! output time
-    procedure(callback_fct), pointer :: callback          !> Callback function
-    real(c_double) :: rtol,atol,hlast,dum1,dum2,tol       ! relative and absolute tolerance
+!     ! local variables
+!     integer(c_int),intent(in) :: neq,nt                   ! number of eq. and timesteps
+!     real(c_double),dimension(nt),intent(in) :: t          ! initial time
+!     real(c_double),dimension(nt),intent(inout) :: t_out   ! output time
+!     procedure(callback_fct), pointer :: callback          !> Callback function
+!     real(c_double) :: rtol,atol,hlast,dum1,dum2,tol       ! relative and absolute tolerance
 
-    integer(c_int) :: ierr,ierr2,ierr3,ierr4,ierr5         ! error flags from C functions
-    integer(c_int) :: nlinconvfails,linconvfails,nsteps    ! debugging variables
+!     integer(c_int) :: ierr,ierr2,ierr3,ierr4,ierr5         ! error flags from C functions
+!     integer(c_int) :: nlinconvfails,linconvfails,nsteps    ! debugging variables
 
-    integer :: outstep           ! output loop counter
+!     integer :: outstep           ! output loop counter
     
-    type(c_ptr) :: sunvec_y      ! sundials vector
-    type(c_ptr) :: sunmat_A      ! sundials matrix
-    type(c_ptr) :: sunlinsol_LS  ! sundials linear solver
-    type(c_ptr) :: cvode_mem     ! CVODE memory
-    type(c_ptr) :: NLS  	     ! nonlinear solver
-    type(c_ptr) :: user_data     ! Data for the RhsFn function
+!     type(c_ptr) :: sunvec_y      ! sundials vector
+!     type(c_ptr) :: sunmat_A      ! sundials matrix
+!     type(c_ptr) :: sunlinsol_LS  ! sundials linear solver
+!     type(c_ptr) :: cvode_mem     ! CVODE memory
+!     type(c_ptr) :: NLS  	     ! nonlinear solver
+!     type(c_ptr) :: user_data     ! Data for the RhsFn function
 
-    ! solution vector, neq is set in the ode_functions module
-    real(c_double),dimension(neq,nt),intent(inout) :: y_out
-    real(c_double),dimension(neq),intent(in) :: ystart
-    real(c_double),dimension(neq) :: y_cur
+!     ! solution vector, neq is set in the ode_functions module
+!     real(c_double),dimension(neq,nt),intent(inout) :: y_out
+!     real(c_double),dimension(neq),intent(in) :: ystart
+!     real(c_double),dimension(neq) :: y_cur
 
-    !======= Internals ============
-    dum1=t(1)
-    dum2=t(2)
-    ! initialize solution vector
-    y_cur = ystart
+!     !======= Internals ============
+!     dum1=t(1)
+!     dum2=t(2)
+!     ! initialize solution vector
+!     y_cur = ystart
 
-    ! create a serial vector
-    sunvec_y = FN_VMake_Serial(neq, y_cur)
-    if (.not. c_associated(sunvec_y)) print *,'ERROR: sunvec = NULL'
+!     ! create a serial vector
+!     sunvec_y = FN_VMake_Serial(neq, y_cur)
+!     if (.not. c_associated(sunvec_y)) print *,'ERROR: sunvec = NULL'
 
-    ! create a dense matrix
-    sunmat_A = FSUNDenseMatrix(neq, neq);
-    if (.not. c_associated(sunmat_A)) print *,'ERROR: sunmat = NULL'
+!     ! create a dense matrix
+!     sunmat_A = FSUNDenseMatrix(neq, neq);
+!     if (.not. c_associated(sunmat_A)) print *,'ERROR: sunmat = NULL'
 
-    ! create a dense linear solver
-    sunlinsol_LS = FSUNDenseLinearSolver(sunvec_y, sunmat_A);
-    if (.not. c_associated(sunlinsol_LS)) print *,'ERROR: sunlinsol = NULL'
+!     ! create a dense linear solver
+!     sunlinsol_LS = FSUNDenseLinearSolver(sunvec_y, sunmat_A);
+!     if (.not. c_associated(sunlinsol_LS)) print *,'ERROR: sunlinsol = NULL'
     
-    ! create CVode memory. CV_BDF recommended for stiff problems (along with default newton iteration)
-    cvode_mem = FCVodeCreate(CV_ADAMS) ! CV_ADAMS recommended for nonstiff problems (along with fixed point solver)
-    if (.not. c_associated(cvode_mem)) print *,'ERROR: cvode_mem = NULL'
+!     ! create CVode memory. CV_BDF recommended for stiff problems (along with default newton iteration)
+!     cvode_mem = FCVodeCreate(CV_ADAMS) ! CV_ADAMS recommended for nonstiff problems (along with fixed point solver)
+!     if (.not. c_associated(cvode_mem)) print *,'ERROR: cvode_mem = NULL'
 
-    ! initiate user data. Just neq for now
-    user_data = transfer(neq,user_data)
-    ierr = FCVodeSetUserData(cvode_mem, user_data);
-    if (ierr /= 0) then
-        write(*,*) 'Error in FCVodeSetUserData, ierr = ', ierr, '; halting'
-	    stop
-    end if
+!     ! initiate user data. Just neq for now
+!     user_data = transfer(neq,user_data)
+!     ierr = FCVodeSetUserData(cvode_mem, user_data);
+!     if (ierr /= 0) then
+!         write(*,*) 'Error in FCVodeSetUserData, ierr = ', ierr, '; halting'
+! 	    stop
+!     end if
   
-    ! initialize CVode
-    ierr = FCVodeInit(cvode_mem, c_funloc(RhsFn), t(1), sunvec_y)
-    if (ierr /= 0) then
-	    write(*,*) 'Error in FCVodeInit, ierr = ', ierr, '; halting'
-	    stop
-    end if
+!     ! initialize CVode
+!     ierr = FCVodeInit(cvode_mem, c_funloc(RhsFn), t(1), sunvec_y)
+!     if (ierr /= 0) then
+! 	    write(*,*) 'Error in FCVodeInit, ierr = ', ierr, '; halting'
+! 	    stop
+!     end if
     
-    ! create fixed point nonlinear solver object
-    NLS = FSUNNonlinSol_FixedPoint(sunvec_y, 0)
-    if (.not. c_associated(NLS)) print *,'ERROR: sunnls = NULL'
+!     ! create fixed point nonlinear solver object
+!     NLS = FSUNNonlinSol_FixedPoint(sunvec_y, 0)
+!     if (.not. c_associated(NLS)) print *,'ERROR: sunnls = NULL'
 
-    ! attache nonlinear solver object to CVode
-    ierr = FCVodeSetNonlinearSolver(cvode_mem, NLS)
-    if (ierr /= 0) then
-        write(*,*) 'Error in FCVodeSetNonlinearSolver, ierr = ', ierr, '; halting'
-        stop
-    end if
+!     ! attache nonlinear solver object to CVode
+!     ierr = FCVodeSetNonlinearSolver(cvode_mem, NLS)
+!     if (ierr /= 0) then
+!         write(*,*) 'Error in FCVodeSetNonlinearSolver, ierr = ', ierr, '; halting'
+!         stop
+!     end if
 
-    ! set relative and absolute tolerances
-    !rtol = 1.0d-6
-    rtol = tol
-    atol = 1.0d-10
+!     ! set relative and absolute tolerances
+!     !rtol = 1.0d-6
+!     rtol = tol
+!     atol = 1.0d-10
 
-    ierr = FCVodeSStolerances(cvode_mem, rtol, atol)
-    if (ierr /= 0) then
-	    write(*,*) 'Error in FCVodeSStolerances, ierr = ', ierr, '; halting'
-	    stop
-    end if
+!     ierr = FCVodeSStolerances(cvode_mem, rtol, atol)
+!     if (ierr /= 0) then
+! 	    write(*,*) 'Error in FCVodeSStolerances, ierr = ', ierr, '; halting'
+! 	    stop
+!     end if
     
-    ! set maximum amount of convergence fails (default: 10)
-    ierr = FCVodeSetMaxConvFails(cvode_mem, 100)
-    if (ierr /= 0) then
-	    write(*,*) 'Error in FCVodeSetMaxConvFails, ierr = ', ierr, '; halting'
-	    stop
-    end if
+!     ! set maximum amount of convergence fails (default: 10)
+!     ierr = FCVodeSetMaxConvFails(cvode_mem, 100)
+!     if (ierr /= 0) then
+! 	    write(*,*) 'Error in FCVodeSetMaxConvFails, ierr = ', ierr, '; halting'
+! 	    stop
+!     end if
     
-    ierr = FCVodeSetMaxNumSteps(cvode_mem, 10000)
-    if (ierr /= 0) then
-	    write(*,*) 'Error in FCVodeSetMaxNumSteps, ierr = ', ierr, '; halting'
-	    stop
-    end if
+!     ierr = FCVodeSetMaxNumSteps(cvode_mem, 10000)
+!     if (ierr /= 0) then
+! 	    write(*,*) 'Error in FCVodeSetMaxNumSteps, ierr = ', ierr, '; halting'
+! 	    stop
+!     end if
     
-    ierr = FCVodeSetInitStep(cvode_mem, (t(2)-t(1))/2)
-    if (ierr /= 0) then
-        write(*,*) 'Error in FCVodeSetInitStep, ierr = ', ierr, '; halting'
-        stop
-    end if
+!     ierr = FCVodeSetInitStep(cvode_mem, (t(2)-t(1))/2)
+!     if (ierr /= 0) then
+!         write(*,*) 'Error in FCVodeSetInitStep, ierr = ', ierr, '; halting'
+!         stop
+!     end if
 
-    ! attach linear solver
-    ierr = FCVodeSetLinearSolver(cvode_mem, sunlinsol_LS, sunmat_A);
-    if (ierr /= 0) then
-	    write(*,*) 'Error in FCVodeSetLinearSolver, ierr = ', ierr, '; halting'
-	    stop
-    end if
+!     ! attach linear solver
+!     ierr = FCVodeSetLinearSolver(cvode_mem, sunlinsol_LS, sunmat_A);
+!     if (ierr /= 0) then
+! 	    write(*,*) 'Error in FCVodeSetLinearSolver, ierr = ', ierr, '; halting'
+! 	    stop
+!     end if
 
-    ! start time stepping
-    print *, '   '
-    print *, 'Finished initialization, starting time steps'
+!     ! start time stepping
+!     print *, '   '
+!     print *, 'Finished initialization, starting time steps'
 
-    do outstep = 1,(nt-1+1)
-	    ! call CVode
-        if (outstep == nt) then
-            write(*,*) 'break'
-            ! ensure FCVode doesn't overstep on the last evolution
-            ierr = FCVodeSetStopTime(cvode_mem, t(nt))
-            if (ierr /= 0) then
-                write(*,*) 'Error in FCVodeSetStopTime, ierr = ', ierr, '; halting'
-                stop
-            end if
+!     do outstep = 1,(nt-1+1)
+! 	    ! call CVode
+!         if (outstep == nt) then
+!             write(*,*) 'break'
+!             ! ensure FCVode doesn't overstep on the last evolution
+!             ierr = FCVodeSetStopTime(cvode_mem, t(nt))
+!             if (ierr /= 0) then
+!                 write(*,*) 'Error in FCVodeSetStopTime, ierr = ', ierr, '; halting'
+!                 stop
+!             end if
 
-        endif
+!         endif
         
-	    ierr = FCVode(cvode_mem, t(outstep), sunvec_y, t_out(outstep), CV_NORMAL)
-        ! http://sundials.wikidot.com/return-time
-        !ierr = FCVode(cvode_mem, t(outstep), sunvec_y, t_out(outstep), CV_NORMAL_TSTOP)
-	    if (ierr /= 0) then
-            rtol=t_out(1)
-            atol=t_out(2)
-            dum1=t(1)
-            dum2=t(2)
-        ierr2 = FCVodeGetLastStep(cvode_mem, hlast)
-        ierr3 = FCVodeGetNumNonlinSolvConvFails(cvode_mem, nlinconvfails)
-        ierr4 = FCVodeGetNumLinConvFails(cvode_mem, linconvfails)
-        ierr5 = FCVodeGetNumSteps(cvode_mem, nsteps)
-		write(*,*) 'Error in FCVODE, ierr = ', ierr, '; halting'
-		stop
-	    endif
-	    y_out(:,outstep) = y_cur    ! Todo: Find a way to write directly to y_out
-    enddo
+! 	    ierr = FCVode(cvode_mem, t(outstep), sunvec_y, t_out(outstep), CV_NORMAL)
+!         ! http://sundials.wikidot.com/return-time
+!         !ierr = FCVode(cvode_mem, t(outstep), sunvec_y, t_out(outstep), CV_NORMAL_TSTOP)
+! 	    if (ierr /= 0) then
+!             rtol=t_out(1)
+!             atol=t_out(2)
+!             dum1=t(1)
+!             dum2=t(2)
+!         ierr2 = FCVodeGetLastStep(cvode_mem, hlast)
+!         ierr3 = FCVodeGetNumNonlinSolvConvFails(cvode_mem, nlinconvfails)
+!         ierr4 = FCVodeGetNumLinConvFails(cvode_mem, linconvfails)
+!         ierr5 = FCVodeGetNumSteps(cvode_mem, nsteps)
+! 		write(*,*) 'Error in FCVODE, ierr = ', ierr, '; halting'
+! 		stop
+! 	    endif
+! 	    y_out(:,outstep) = y_cur    ! Todo: Find a way to write directly to y_out
+!     enddo
 
-    ! diagnostics output (custom function. Not written)
-    !call CVodeStats(cvode_mem)
+!     ! diagnostics output (custom function. Not written)
+!     !call CVodeStats(cvode_mem)
 
-    ! clean up
-    call FCVodeFree(cvode_mem)
-    call FSUNLinSolFree_Dense(sunlinsol_LS)
-    call FSUNMatDestroy_Dense(sunmat_A)
-    call FN_VDestroy_Serial(sunvec_y)
+!     ! clean up
+!     call FCVodeFree(cvode_mem)
+!     call FSUNLinSolFree_Dense(sunlinsol_LS)
+!     call FSUNMatDestroy_Dense(sunmat_A)
+!     call FN_VDestroy_Serial(sunvec_y)
 	
-    end subroutine MagTense_CVODEsuite
+!     end subroutine MagTense_CVODEsuite
     
     
-    !Wrapper for CVODE to call fct
-    integer(c_int) function RhsFn(tn, sunvec_y, sunvec_f, user_data) &
-       result(ierr) bind(C,name='RhsFn')
+!     !Wrapper for CVODE to call fct
+!     integer(c_int) function RhsFn(tn, sunvec_y, sunvec_f, user_data) &
+!        result(ierr) bind(C,name='RhsFn')
 
-    !======= Inclusions ===========
-    use, intrinsic :: iso_c_binding
-    use fnvector_serial_mod
+!     !======= Inclusions ===========
+!     use, intrinsic :: iso_c_binding
+!     use fnvector_serial_mod
 
-    !======= Declarations =========
-    implicit none
+!     !======= Declarations =========
+!     implicit none
 
-    ! calling variables
-    real(c_double), value :: tn        ! current time
-    type(c_ptr), value    :: sunvec_y  ! solution N_Vector
-    type(c_ptr), value    :: sunvec_f  ! rhs N_Vector
-    type(c_ptr), value    :: user_data ! user-defined data. So far only neq.
+!     ! calling variables
+!     real(c_double), value :: tn        ! current time
+!     type(c_ptr), value    :: sunvec_y  ! solution N_Vector
+!     type(c_ptr), value    :: sunvec_f  ! rhs N_Vector
+!     type(c_ptr), value    :: user_data ! user-defined data. So far only neq.
 
-    ! pointers to data in SUNDAILS vectors
-    real(c_double), pointer :: yvec(:)
-    real(c_double), pointer :: fvec(:)
+!     ! pointers to data in SUNDAILS vectors
+!     real(c_double), pointer :: yvec(:)
+!     real(c_double), pointer :: fvec(:)
 
-    integer(c_int) :: i, neq
-    neq = transfer(user_data,neq)
+!     integer(c_int) :: i, neq
+!     neq = transfer(user_data,neq)
     
-    !======= Internals ============
+!     !======= Internals ============
 
-    ! get data arrays from SUNDIALS vectors
-    call FN_VGetData_Serial(sunvec_y, yvec)
-    call FN_VGetData_Serial(sunvec_f, fvec)
+!     ! get data arrays from SUNDIALS vectors
+!     call FN_VGetData_Serial(sunvec_y, yvec)
+!     call FN_VGetData_Serial(sunvec_f, fvec)
 
-    !copy the yvec
-    do i=1,neq
-        MTy_out(i) = yvec(i)
-    enddo
-    
-    
-    ! fill RHS vector
-    !fvec(1) = lamda*yvec(1) + 1.0/(1.0+tn*tn) - lamda*atan(tn);
-    call MTdmdt( tn, MTy_out, MTf_vec )  
-
-    !copy the result back
-    do i=1,neq
-        fvec(i) = MTf_vec(i)
-    enddo
+!     !copy the yvec
+!     do i=1,neq
+!         MTy_out(i) = yvec(i)
+!     enddo
     
     
-    ! return success
-    ierr = 0
-    return
+!     ! fill RHS vector
+!     !fvec(1) = lamda*yvec(1) + 1.0/(1.0+tn*tn) - lamda*atan(tn);
+!     call MTdmdt( tn, MTy_out, MTf_vec )  
 
-    end function RhsFn
-#else
-    subroutine MagTense_CVODEsuite( neq, t, nt, ystart,  t_out, y_out, tol, callback )
-	use, intrinsic :: iso_c_binding
-
-    ! local variables
-    integer(c_int),intent(in) :: neq,nt                   ! number of eq. and timesteps
-    real(c_double),dimension(nt),intent(in) :: t          ! initial time
-    real(c_double),dimension(nt),intent(inout) :: t_out   ! output time
-    procedure(callback_fct), pointer :: callback         !> Callback function
-    real(c_double) :: rtol,atol,hlast,dum1,dum2,tol       ! relative and absolute tolerance
-
-    ! solution vector, neq is set in the ode_functions module
-    real(c_double),dimension(neq,nt),intent(inout) :: y_out
-    real(c_double),dimension(neq),intent(in) :: ystart
+!     !copy the result back
+!     do i=1,neq
+!         fvec(i) = MTf_vec(i)
+!     enddo
     
-    call callback( 'MagTense not compiled with CVODE - exiting!', 0 )
-    stop
-    end subroutine MagTense_CVODEsuite
-#endif
+    
+!     ! return success
+!     ierr = 0
+!     return
+
+!     end function RhsFn
+! #else
+subroutine MagTense_CVODEsuite( neq, t, nt, ystart,  t_out, y_out, tol, callback )
+use, intrinsic :: iso_c_binding
+
+! local variables
+integer(c_int),intent(in) :: neq,nt                   ! number of eq. and timesteps
+real(c_double),dimension(nt),intent(in) :: t          ! initial time
+real(c_double),dimension(nt),intent(inout) :: t_out   ! output time
+procedure(callback_fct), pointer :: callback         !> Callback function
+real(c_double) :: rtol,atol,hlast,dum1,dum2,tol       ! relative and absolute tolerance
+
+! solution vector, neq is set in the ode_functions module
+real(c_double),dimension(neq,nt),intent(inout) :: y_out
+real(c_double),dimension(neq),intent(in) :: ystart
+
+call callback( 'MagTense not compiled with CVODE - exiting!', 0 )
+stop
+end subroutine MagTense_CVODEsuite
+! #endif
 end module ODE_Solvers

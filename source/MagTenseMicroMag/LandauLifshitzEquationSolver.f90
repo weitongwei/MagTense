@@ -6,11 +6,10 @@ include 'blas.f90'
     use MKL_DFTI
     use BLAS95
     use MicroMagParameters
-    use MagTenseMicroMagIO
+    use MagTenseMicroMagPyIO
     use LLODE_Debug
     use util_call
     use DemagFieldGetSolution
-    use FortranCuda
     implicit none
     
    
@@ -19,9 +18,9 @@ include 'blas.f90'
     type(MicroMagSolution) :: gb_solution
     type(MicroMagProblem) :: gb_problem
     
-    real(DP),dimension(:),allocatable :: crossX,crossY,crossZ   !>Cross product terms
-    real(DP),dimension(:),allocatable :: HeffX,HeffY,HeffZ      !>Effective fields
-    real(DP),dimension(:),allocatable :: HeffX2,HeffY2,HeffZ2      !>Effective fields
+    real(SP),dimension(:),allocatable :: crossX,crossY,crossZ   !>Cross product terms
+    real(SP),dimension(:),allocatable :: HeffX,HeffY,HeffZ      !>Effective fields
+    real(SP),dimension(:),allocatable :: HeffX2,HeffY2,HeffZ2      !>Effective fields
     
     private :: gb_solution,gb_problem,crossX,crossY,crossZ,HeffX,HeffY,HeffZ,HeffX2,HeffY2,HeffZ2
     
@@ -39,38 +38,38 @@ include 'blas.f90'
     integer :: ntot,i,j,k,ind,nt,nt_Hext,stat       !> total no. of tiles
     procedure(dydt_fct), pointer :: fct             !> Input function pointer for the function to be integrated
     procedure(callback_fct),pointer :: cb_fct       !> Callback function for displaying progress
-    real(DP),dimension(:,:,:),allocatable :: M_out        !> Internal buffer for the solution (M) on the form (3*ntot,nt)
+    real(SP),dimension(:,:,:),allocatable :: M_out        !> Internal buffer for the solution (M) on the form (3*ntot,nt)
     
     
     !Save internal representation of the problem and the solution
     gb_solution = sol
     gb_problem = prob
     
-    call displayMatlabMessage( 'Initializing matrices' )
+    call displayMessage( 'Initializing matrices' )
     !Calculate the interaction matrices
     call initializeInteractionMatrices( gb_problem )
     
     
 
-    if ( gb_problem%useCuda .eq. useCudaTrue ) then
-        call displayMatlabMessage( 'Copying to CUDA' )
-#if USE_CUDA            
-        !Initialize the Cuda arrays and load the demag tensors into the GPU memory
-        if ( ( gb_problem%demag_approximation .eq. DemagApproximationThreshold ) .or. ( gb_problem%demag_approximation .eq. DemagApproximationThresholdFraction ) ) then
-           
-            !If the matrices are sparse
-            call cudaInit_sparse( gb_problem%K_s )        
-            
-        else
-            !if the matrices are dense
-            call cudaInit_s( gb_problem%Kxx, gb_problem%Kxy, gb_problem%Kxz, gb_problem%Kyy, gb_problem%Kyz, gb_problem%Kzz )
-            
-        endif
-#else
-        call displayMatlabMessage( 'MagTense not compiled with CUDA - exiting!' )
-        stop
-#endif            
-    endif
+    ! if ( gb_problem%useCuda .eqv. useCudaTrue ) then
+    !     call displayMatlabMessage( 'Copying to CUDA' )
+    !     #if USE_CUDA            
+    !             !Initialize the Cuda arrays and load the demag tensors into the GPU memory
+    !             if ( ( gb_problem%demag_approximation .eqv. DemagApproximationThreshold ) .or. ( gb_problem%demag_approximation .eqv. DemagApproximationThresholdFraction ) ) then
+                
+    !                 !If the matrices are sparse
+    !                 call cudaInit_sparse( gb_problem%K_s )        
+                    
+    !             else
+    !                 !if the matrices are dense
+    !                 call cudaInit_s( gb_problem%Kxx, gb_problem%Kxy, gb_problem%Kxz, gb_problem%Kyy, gb_problem%Kyz, gb_problem%Kzz )
+                    
+    !             endif
+    !     #else
+    !             call displayMatlabMessage( 'MagTense not compiled with CUDA - exiting!' )
+    !             stop
+    !     #endif            
+    ! endif
 
     ntot = gb_problem%grid%nx * gb_problem%grid%ny * gb_problem%grid%nz
     allocate( gb_solution%pts(ntot,3) )
@@ -97,7 +96,7 @@ include 'blas.f90'
     
 
     
-    call displayMatlabMessage( 'Initializing solution' )
+    call displayMessage( 'Initializing solution' )
     !Initialize the solution, i.e. allocate various arrays
     call initializeSolution( gb_problem, gb_solution )
         
@@ -107,11 +106,11 @@ include 'blas.f90'
     
     
     
-    call displayMatlabMessage( 'Running solution' )
+    call displayMessage( 'Running solution' )
     !Do the solution
     fct => dmdt_fct
-    cb_fct => displayMatlabProgressMessage
-    
+    cb_fct => displayProgressMessage
+
     gb_solution%HextInd = 1;
     if ( gb_problem%solver .eq. MicroMagSolverExplicit ) then
         !Go through a range of applied fields and find the equilibrium solution for each of them
@@ -171,13 +170,12 @@ include 'blas.f90'
     
     !clean-up
     stat = DftiFreeDescriptor(gb_problem%desc_hndl_FFT_M_H)
-    
-        
-#if USE_CUDA    
-    if ( gb_problem%useCuda .eq. useCudaTrue ) then
-        call cudaDestroy()
-    endif
-#endif
+   
+! #if USE_CUDA    
+!     if ( gb_problem%useCuda .eqv. useCudaTrue ) then
+!         call cudaDestroy()
+!     endif
+! #endif
     !Make sure to return the correct state
     sol = gb_solution
     prob = gb_problem
@@ -197,9 +195,9 @@ include 'blas.f90'
     !> @param[inout] dmdt array size n for the derivatives at the time t
     !---------------------------------------------------------------------------    
     subroutine dmdt_fct ( t, m, dmdt )  
-    real(DP),intent(in) :: t
-    real(DP),dimension(:),intent(in) :: m
-    real(DP),dimension(:),intent(inout) :: dmdt
+    real(SP),intent(in) :: t
+    real(SP),dimension(:),intent(in) :: m
+    real(SP),dimension(:),intent(inout) :: dmdt
     integer :: ntot
     
     ntot = gb_problem%grid%nx * gb_problem%grid%ny * gb_problem%grid%nz
@@ -260,8 +258,8 @@ include 'blas.f90'
     !> @param[in] t the time at which to evaluate alpha
     !> @param[in] problem the problem on which the solution is solved
     function alpha( t, problem )
-    real(DP) :: alpha
-    real(DP),intent(in) :: t
+    real(SP) :: alpha
+    real(SP),intent(in) :: t
     type(MicroMagProblem),intent(in) :: problem
     
     if ( problem%alpha0 .eq. 0 ) then
@@ -407,7 +405,7 @@ include 'blas.f90'
     
     integer :: stat
     type(MATRIX_DESCR) :: descr
-    real*4 :: alpha, beta
+    real(SP) :: alpha, beta
     
     descr%type = SPARSE_MATRIX_TYPE_GENERAL
     descr%mode = SPARSE_FILL_MODE_FULL
@@ -419,13 +417,13 @@ include 'blas.f90'
     
     !Effective field in the X-direction. Note that the scalar alpha is multiplied on from the left, such that
     !y = alpha * (A_exch * Mx )
-    stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%A_exch, descr, solution%Mx, beta, solution%HjX )
+    stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%A_exch, descr, solution%Mx, beta, solution%HjX )
     
     !Effective field in the Y-direction
-    stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%A_exch, descr, solution%My, beta, solution%HjY )
+    stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%A_exch, descr, solution%My, beta, solution%HjY )
     
     !Effective field in the Z-direction
-    stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%A_exch, descr, solution%Mz, beta, solution%HjZ )
+    stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%A_exch, descr, solution%Mz, beta, solution%HjZ )
     
     end subroutine updateExchangeTerms
 
@@ -441,9 +439,9 @@ include 'blas.f90'
     subroutine updateExternalField( problem, solution, t )
     type(MicroMagProblem),intent(in) :: problem         !> Problem data structure    
     type(MicroMagSolution),intent(inout) :: solution    !> Solution data structure
-    real(DP),intent(in) :: t
+    real(SP),intent(in) :: t
     
-    real(DP) :: HextX,HextY,HextZ
+    real(SP) :: HextX,HextY,HextZ
     
     if ( problem%solver .eq. MicroMagSolverExplicit ) then
          !Assume the field to be constant in time (we are finding the equilibrium solution at a given applied field)
@@ -513,7 +511,7 @@ include 'blas.f90'
     type(MicroMagSolution),intent(inout) :: solution    !> Solution data structure
     integer :: stat,ntot,i
     type(matrix_descr) :: descr
-    real*4 :: pref,alpha,beta
+    real(SP):: pref,alpha,beta
     complex(kind=4) :: alpha_c, beta_c
     
     descr%type = SPARSE_MATRIX_TYPE_GENERAL
@@ -525,34 +523,34 @@ include 'blas.f90'
             !Do the matrix multiplications using sparse matrices 
             alpha = 1.0
             beta = 0.
-            stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(1)%A, descr, solution%Mx, beta, solution%HmX )
+            stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(1)%A, descr, solution%Mx, beta, solution%HmX )
             beta = 1.0
-            stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(2)%A, descr, solution%My, beta, solution%HmX )
-            stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(3)%A, descr, solution%Mz, beta, solution%HmX )
+            stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(2)%A, descr, solution%My, beta, solution%HmX )
+            stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(3)%A, descr, solution%Mz, beta, solution%HmX )
         
             solution%HmX = solution%HmX * (-solution%Mfact )
             
             beta = 0.
-            stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(2)%A, descr, solution%Mx, beta, solution%HmY )
+            stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(2)%A, descr, solution%Mx, beta, solution%HmY )
             beta = 1.0
-            stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(4)%A, descr, solution%My, beta, solution%HmY )
-            stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(5)%A, descr, solution%Mz, beta, solution%HmY )
+            stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(4)%A, descr, solution%My, beta, solution%HmY )
+            stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(5)%A, descr, solution%Mz, beta, solution%HmY )
         
             solution%HmY = solution%HmY * (-solution%Mfact )
           
             beta = 0.
-            stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(3)%A, descr, solution%Mx, beta, solution%HmZ )
+            stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(3)%A, descr, solution%Mx, beta, solution%HmZ )
             beta = 1.0
-            stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(5)%A, descr, solution%My, beta, solution%HmZ )
-            stat = mkl_sparse_s_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(6)%A, descr, solution%Mz, beta, solution%HmZ )
+            stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(5)%A, descr, solution%My, beta, solution%HmZ )
+            stat = mkl_sparse_d_mv ( SPARSE_OPERATION_NON_TRANSPOSE, alpha, problem%K_s(6)%A, descr, solution%Mz, beta, solution%HmZ )
         
             solution%HmZ = solution%HmZ * (-solution%Mfact )
-        else
-#if USE_CUDA
-            !Do the sparse matrix multiplication using CUDA
-            pref = sngl(-1 * solution%Mfact)                                
-            call cudaMatrVecMult_sparse( solution%Mx, solution%My, solution%Mz, solution%HmX, solution%HmY, solution%HmZ, pref )
-#endif            
+!         else
+! #if USE_CUDA
+!             !Do the sparse matrix multiplication using CUDA
+!             pref = sngl(-1 * solution%Mfact)                                
+!             call cudaMatrVecMult_sparse( solution%Mx, solution%My, solution%Mz, solution%HmX, solution%HmY, solution%HmZ, pref )
+! #endif            
         endif
         
     elseif ( ( problem%demag_approximation .eq. DemagApproximationFFTThreshold ) .or. ( problem%demag_approximation .eq. DemagApproximationFFTThresholdFraction ) ) then
@@ -674,9 +672,9 @@ include 'blas.f90'
             
         else
             pref = sngl(-1 * solution%Mfact)
-#if USE_CUDA        
-            call cudaMatrVecMult( solution%Mx, solution%My, solution%Mz, solution%HmX, solution%HmY, solution%HmZ, pref )
-#endif            
+! #if USE_CUDA        
+!             call cudaMatrVecMult( solution%Mx, solution%My, solution%Mz, solution%HmX, solution%HmY, solution%HmZ, pref )
+! #endif            
         endif 
     endif
     
@@ -791,9 +789,9 @@ include 'blas.f90'
     type(MicroMagProblem),intent(inout) :: problem                !> Grid data structure    
     
     type(MagTile),dimension(1) :: tile                            !> Tile representing the current tile under consideration
-    real(DP),dimension(:,:),allocatable :: H                      !> The field and the corresponding evaluation point arrays
+    real(SP),dimension(:,:),allocatable :: H                      !> The field and the corresponding evaluation point arrays
     integer :: i,j,k,nx,ny,nz,ntot,ind                            !> Internal counters and index variables
-    real(DP),dimension(:,:,:,:),allocatable :: Nout               !> Temporary storage for the demag tensor            
+    real(SP),dimension(:,:,:,:),allocatable :: Nout               !> Temporary storage for the demag tensor            
     complex(kind=4),dimension(:,:),allocatable :: eye,FT,IFT,temp !> Identity matrix, the indentity matrix' fourier transform and its inverse fourier transform
     type(DFTI_DESCRIPTOR), POINTER :: desc_handle                 !> Handle for the FFT MKL stuff
     integer :: status
@@ -801,7 +799,7 @@ include 'blas.f90'
     real(SP),dimension(:),allocatable  :: Kxx_abs, Kxy_abs, Kxz_abs, Kyy_abs, Kyz_abs, Kzz_abs  !> Temporary matrices with absolute values of the demag tensor, for threshold calculations
     complex(kind=4) :: thres
     integer,dimension(3) :: L                                                !> Array specifying the dimensions of the fft
-    real*4 :: threshold_var, alpha, beta
+    real(SP) :: threshold_var, alpha, beta
     complex(kind=4) :: alpha_c, beta_c
     integer ::  nx_K, ny_K, k_xx, k_xy, k_xz, k_yy, k_yz, k_zz 
     logical,dimension(:,:),allocatable :: mask_xx, mask_xy, mask_xz     !> mask used for finding non-zero values
@@ -1006,27 +1004,27 @@ include 'blas.f90'
             k_zz = 1
             do i=1,nx_K
                 do j=1,ny_K
-                    if (mask_xx(i,j) .eq. .true.) then
+                    if (mask_xx(i,j) .eqv. .true.) then
                         Kxx_abs(k_xx) = problem%Kxx(i,j) 
                         k_xx = k_xx + 1
                     endif
-                    if (mask_xy(i,j) .eq. .true.) then
+                    if (mask_xy(i,j) .eqv. .true.) then
                         Kxy_abs(k_xy) = problem%Kxy(i,j) 
                         k_xy = k_xy + 1
                     endif
-                    if (mask_xz(i,j) .eq. .true.) then
+                    if (mask_xz(i,j) .eqv. .true.) then
                         Kxz_abs(k_xz) = problem%Kxz(i,j) 
                         k_xz = k_xz + 1
                     endif
-                    if (mask_yy(i,j) .eq. .true.) then
+                    if (mask_yy(i,j) .eqv. .true.) then
                         Kyy_abs(k_yy) = problem%Kyy(i,j) 
                         k_yy = k_yy + 1
                     endif
-                    if (mask_yz(i,j) .eq. .true.) then
+                    if (mask_yz(i,j) .eqv. .true.) then
                         Kyz_abs(k_yz) = problem%Kyz(i,j) 
                         k_yz = k_yz + 1
                     endif
-                    if (mask_zz(i,j) .eq. .true.) then
+                    if (mask_zz(i,j) .eqv. .true.) then
                         Kzz_abs(k_zz) = problem%Kzz(i,j) 
                         k_zz = k_zz + 1
                     endif
@@ -1184,27 +1182,27 @@ include 'blas.f90'
             k_zz = 1
             do i=1,nx_K
                 do j=1,ny_K
-                    if (mask_xx(i,j) .eq. .true.) then
+                    if (mask_xx(i,j) .eqv. .true.) then
                         Kxx_abs(k_xx) = abs(Kxx_c(i,j)) 
                         k_xx = k_xx + 1
                     endif
-                    if (mask_xy(i,j) .eq. .true.) then
+                    if (mask_xy(i,j) .eqv. .true.) then
                         Kxy_abs(k_xy) = abs(Kxy_c(i,j))
                         k_xy = k_xy + 1
                     endif
-                    if (mask_xz(i,j) .eq. .true.) then
+                    if (mask_xz(i,j) .eqv. .true.) then
                         Kxz_abs(k_xz) = abs(Kxz_c(i,j))
                         k_xz = k_xz + 1
                     endif
-                    if (mask_yy(i,j) .eq. .true.) then
+                    if (mask_yy(i,j) .eqv. .true.) then
                         Kyy_abs(k_yy) = abs(Kyy_c(i,j)) 
                         k_yy = k_yy + 1
                     endif
-                    if (mask_yz(i,j) .eq. .true.) then
+                    if (mask_yz(i,j) .eqv. .true.) then
                         Kyz_abs(k_yz) = abs(Kyz_c(i,j))
                         k_yz = k_yz + 1
                     endif
-                    if (mask_zz(i,j) .eq. .true.) then
+                    if (mask_zz(i,j) .eqv. .true.) then
                         Kzz_abs(k_zz) = abs(Kzz_c(i,j)) 
                         k_zz = k_zz + 1
                     endif
@@ -1269,7 +1267,7 @@ include 'blas.f90'
     !> Double precision
     !>-----------------------------------------
     subroutine ConvertDenseToSparse_d( D, K, threshold)
-    real(DP),dimension(:,:),intent(in) :: D                 !> Dense input matrix    
+    real(SP),dimension(:,:),intent(in) :: D                 !> Dense input matrix    
     real*4,intent(in) :: threshold                          !> Values less than this (in absolute) of D are considered zero
     type(MagTenseSparse),intent(inout) :: K                 !> Sparse matrix allocation
     
@@ -1303,7 +1301,7 @@ include 'blas.f90'
         !starting index of the i'th row
         K%rows_start(i) = ind
         do j=1,ny
-            if ( mask(i,j) .eq. .true. ) then
+            if ( mask(i,j) .eqv. .true. ) then
                 K%values( ind ) = D(i,j)
                 
                 K%cols( ind ) = j
@@ -1366,7 +1364,7 @@ include 'blas.f90'
         !starting index of the i'th row
         K%rows_start(i) = ind
         do j=1,ny
-            if ( mask(i,j) .eq. .true. ) then
+            if ( mask(i,j) .eqv. .true. ) then
                 K%values( ind ) = D(i,j)
                 
                 K%cols( ind ) = j
@@ -1430,7 +1428,7 @@ include 'blas.f90'
         !starting index of the i'th row
         K%rows_start(i) = ind
         do j=1,ny
-            if ( mask(i,j) .eq. .true. ) then
+            if ( mask(i,j) .eqv. .true. ) then
                 K%values( ind ) = D(i,j)
                 
                 K%cols( ind ) = j
@@ -1461,13 +1459,13 @@ include 'blas.f90'
     !>-----------------------------------------
     subroutine FindThresholdFraction(Kxx, Kxy, Kxz, Kyy, Kyz, Kzz, threshold_var)
     real(SP),dimension(:),intent(inout) :: Kxx, Kxy, Kxz, Kyy, Kyz, Kzz                !> The absolute of the demag tensors 
-    real*4,intent(inout) :: threshold_var
+    real(SP),intent(inout) :: threshold_var
     real*4 :: f_large, f_small, f_middle
     integer,dimension(6) :: count_ind
     integer :: count_middle, n_ele_nonzero, k_do  
     character*(10) :: prog_str
         
-    call displayMatlabMessage( 'Starting threshold calculation.' )
+    call displayMessage( 'Starting threshold calculation.')
     
     !The total number of nonzero elements in the demag tensor
     n_ele_nonzero = size( Kxx )
@@ -1510,7 +1508,7 @@ include 'blas.f90'
         endif
             
         if ( k_do .gt. 1000 ) then
-            call displayMatlabMessage( 'Iterations exceeded in finding threshold value. Stopping iterations.' )
+            call displayMessage( 'Iterations exceeded in finding threshold value. Stopping iterations.' )
                 
             threshold_var = f_middle
             exit
@@ -1519,12 +1517,12 @@ include 'blas.f90'
         k_do = k_do+1
     enddo  
     
-    call displayMatlabMessage( 'Using a threshold value of :' )
+    call displayMessage( 'Using a threshold value of :' )
     write (prog_str,'(F10.9)') threshold_var
-    call displayMatlabMessage( prog_str )
-    call displayMatlabMessage( 'i.e. a fraction of:' )
+    call displayMessage( prog_str )
+    call displayMessage( 'i.e. a fraction of:' )
     write (prog_str,'(F6.4)') real(count_middle)/real(n_ele_nonzero)
-    call displayMatlabMessage( prog_str )
+    call displayMessage( prog_str )
     
     end subroutine FindThresholdFraction
     
@@ -1887,7 +1885,7 @@ include 'blas.f90'
     end subroutine ComputeExchangeTerm3D_Uniform
        
     !>-----------------------------------------
-    !> @author Rasmus Bjørk, rabj@dtu.dk, DTU, 2020
+    !> @author Rasmus Bjï¿½rk, rabj@dtu.dk, DTU, 2020
     !> @brief
     !> Converts the loaded information from Matlab in CSR 
     !> format to a CSR MKL type
@@ -1917,7 +1915,7 @@ include 'blas.f90'
     
     
     !>-----------------------------------------
-    !> @author Rasmus Bjørk, rabj@dtu.dk, DTU, 2020
+    !> @author Rasmus Bjï¿½rk, rabj@dtu.dk, DTU, 2020
     !> @brief
     !> Calculates the anisotropy term sparse matrix assuming the effective field anisotropy is linear in m    
     !> @param[inout] problem the data structure containing the problem
@@ -1930,7 +1928,7 @@ include 'blas.f90'
     end subroutine ComputeAnisotropyTerm3D
     
     !>-----------------------------------------
-    !> @author Rasmus Bjørk, rabj@dtu.dk, DTU, 2020
+    !> @author Rasmus Bjï¿½rk, rabj@dtu.dk, DTU, 2020
     !> @brief
     !> Calculates the anisotropy term matrix on any grid  
     !> @param[inout] problem the data structure containing the problem
